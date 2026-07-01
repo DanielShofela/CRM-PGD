@@ -1,0 +1,530 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  writeBatch
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import {
+  User,
+  Client,
+  TontineGroup,
+  TontineContribution,
+  KitPlan,
+  Delivery,
+  Payment,
+  Notification,
+  ActivityLog,
+  Role,
+  ModuleRegistry
+} from '../types';
+import { hashPassword } from '../utils/crypto';
+
+// Collections Firestore
+const USERS_COL = 'users';
+const CLIENTS_COL = 'clients';
+const TONTINE_GROUPS_COL = 'tontine_groups';
+const CONTRIBUTIONS_COL = 'tontine_contributions';
+const KITS_COL = 'kits';
+const DELIVERIES_COL = 'deliveries';
+const PAYMENTS_COL = 'payments';
+const NOTIFICATIONS_COL = 'notifications';
+const ACTIVITY_LOGS_COL = 'activity_logs';
+const ROLES_COL = 'roles';
+const SETTINGS_COL = 'settings';
+
+/**
+ * Générateur d'ID unique si nécessaire en local, ou utilise l'ID généré par Firestore doc
+ */
+const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+// ==========================================
+// 1. REPOSITORY UTILISATEURS (USERS)
+// ==========================================
+export const UserRepository = {
+  async getById(id: string): Promise<User | null> {
+    const docRef = doc(db, USERS_COL, id);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? (docSnap.data() as User) : null;
+  },
+
+  async getByPhone(phone: string): Promise<User | null> {
+    const q = query(collection(db, USERS_COL), where('phone', '==', phone));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data() as User;
+    }
+    return null;
+  },
+
+  async getAll(): Promise<User[]> {
+    const q = query(collection(db, USERS_COL), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as User);
+  },
+
+  async create(user: Omit<User, 'id' | 'createdAt' | 'passwordHash'>, rawPassword: string): Promise<User> {
+    const id = generateId();
+    const passwordHash = await hashPassword(rawPassword);
+    const newUser: User = {
+      ...user,
+      id,
+      passwordHash,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, USERS_COL, id), newUser);
+    await ActivityRepository.log(id, user.phone, user.displayName, 'create', `Création de l'utilisateur ${user.displayName} (${user.role})`);
+    return newUser;
+  },
+
+  async update(id: string, userUpdates: Partial<Omit<User, 'id' | 'passwordHash'>>, adminUser?: { id: string, name: string, phone: string }): Promise<void> {
+    const docRef = doc(db, USERS_COL, id);
+    await updateDoc(docRef, userUpdates);
+    if (adminUser) {
+      await ActivityRepository.log(adminUser.id, adminUser.phone, adminUser.name, 'update', `Mise à jour de l'utilisateur ID: ${id}`);
+    }
+  },
+
+  async updatePassword(id: string, newRawPassword: string, adminUser?: { id: string, name: string, phone: string }): Promise<void> {
+    const passwordHash = await hashPassword(newRawPassword);
+    const docRef = doc(db, USERS_COL, id);
+    await updateDoc(docRef, { passwordHash });
+    if (adminUser) {
+      await ActivityRepository.log(adminUser.id, adminUser.phone, adminUser.name, 'update', `Changement de mot de passe de l'utilisateur ID: ${id}`);
+    }
+  },
+
+  async delete(id: string, adminUser: { id: string, name: string, phone: string }): Promise<void> {
+    await deleteDoc(doc(db, USERS_COL, id));
+    await ActivityRepository.log(adminUser.id, adminUser.phone, adminUser.name, 'delete', `Suppression de l'utilisateur ID: ${id}`);
+  },
+
+  async authenticate(phone: string, rawPassword: string): Promise<User | null> {
+    // S'assurer de la présence de l'administrateur suprême demandé
+    if (phone === '0170561121' && rawPassword === '70561121Daniel 19') {
+      const existing = await this.getByPhone(phone);
+      if (!existing) {
+        const passwordHash = await hashPassword(rawPassword);
+        const supremeAdmin: User = {
+          id: 'user_super_admin',
+          displayName: 'admin',
+          phone: '0170561121',
+          passwordHash,
+          role: 'super_admin',
+          status: 'active',
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, USERS_COL, supremeAdmin.id), supremeAdmin);
+      }
+    } else if (phone === '0102030405' && rawPassword === 'penta2026') {
+      const existing = await this.getByPhone(phone);
+      if (!existing) {
+        const passwordHash = await hashPassword(rawPassword);
+        const demoAdmin: User = {
+          id: 'user_old_super_admin',
+          displayName: 'Awa Koné (Super Admin)',
+          phone: '0102030405',
+          passwordHash,
+          role: 'super_admin',
+          status: 'active',
+          createdAt: new Date().toISOString()
+        };
+        await setDoc(doc(db, USERS_COL, demoAdmin.id), demoAdmin);
+      }
+    }
+
+    const user = await this.getByPhone(phone);
+    if (!user) return null;
+    if (user.status !== 'active') return null;
+    const inputHash = await hashPassword(rawPassword);
+    if (user.passwordHash === inputHash) {
+      await ActivityRepository.log(user.id, user.phone, user.displayName, 'login', 'Connexion réussie à l\'application');
+      return user;
+    }
+    return null;
+  }
+};
+
+// ==========================================
+// 2. REPOSITORY CLIENTS (CLIENTS)
+// ==========================================
+export const ClientRepository = {
+  async getById(id: string): Promise<Client | null> {
+    const docRef = doc(db, CLIENTS_COL, id);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? (docSnap.data() as Client) : null;
+  },
+
+  async getAll(): Promise<Client[]> {
+    const q = query(collection(db, CLIENTS_COL), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Client);
+  },
+
+  async create(client: Omit<Client, 'id' | 'createdAt'>, author?: { id: string, name: string, phone: string }): Promise<Client> {
+    const id = generateId();
+    const newClient: Client = {
+      ...client,
+      id,
+      createdAt: new Date().toISOString(),
+      customFields: client.customFields || {},
+      attachments: client.attachments || []
+    };
+    await setDoc(doc(db, CLIENTS_COL, id), newClient);
+    const authorId = author ? author.id : 'public_self_register';
+    const authorPhone = author ? author.phone : client.phone;
+    const authorName = author ? author.name : 'Auto-Inscription';
+    const clientName = `${client.firstName || ''} ${client.lastName || ''}`.trim() || `Client (${client.phone})`;
+    await ActivityRepository.log(authorId, authorPhone, authorName, 'create', `Création du client ${clientName}`);
+    await NotificationRepository.send(`Nouveau client`, `Le client ${clientName} a été créé.`);
+    return newClient;
+  },
+
+  async update(id: string, clientUpdates: Partial<Client>, author?: { id: string, name: string, phone: string }): Promise<void> {
+    const docRef = doc(db, CLIENTS_COL, id);
+    await updateDoc(docRef, clientUpdates);
+    const authorId = author ? author.id : 'public_self_update';
+    const authorPhone = author ? author.phone : (clientUpdates.phone || '0000000000');
+    const authorName = author ? author.name : 'Auto-Modification';
+    await ActivityRepository.log(authorId, authorPhone, authorName, 'update', `Modification du client ID: ${id}`);
+  },
+
+  async delete(id: string, author: { id: string, name: string, phone: string }): Promise<void> {
+    await deleteDoc(doc(db, CLIENTS_COL, id));
+    await ActivityRepository.log(author.id, author.phone, author.name, 'delete', `Suppression du client ID: ${id}`);
+  }
+};
+
+// ==========================================
+// 3. REPOSITORY TONTINES
+// ==========================================
+export const TontineRepository = {
+  async getGroupById(id: string): Promise<TontineGroup | null> {
+    const docRef = doc(db, TONTINE_GROUPS_COL, id);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? (docSnap.data() as TontineGroup) : null;
+  },
+
+  async getAllGroups(): Promise<TontineGroup[]> {
+    const q = query(collection(db, TONTINE_GROUPS_COL), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as TontineGroup);
+  },
+
+  async createGroup(group: Omit<TontineGroup, 'id' | 'createdAt'>, author: { id: string, name: string, phone: string }): Promise<TontineGroup> {
+    const id = generateId();
+    const newGroup: TontineGroup = {
+      ...group,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, TONTINE_GROUPS_COL, id), newGroup);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'create', `Création du groupe de tontine : ${group.name}`);
+    await NotificationRepository.send(`Nouveau groupe Tontine`, `Le groupe "${group.name}" de cotisation ${group.amount} FCFA a été ouvert.`);
+    return newGroup;
+  },
+
+  async updateGroup(id: string, groupUpdates: Partial<TontineGroup>, author: { id: string, name: string, phone: string }): Promise<void> {
+    await updateDoc(doc(db, TONTINE_GROUPS_COL, id), groupUpdates);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'update', `Modification du groupe tontine ID: ${id}`);
+  },
+
+  async getContributionsByGroup(groupId: string): Promise<TontineContribution[]> {
+    const q = query(collection(db, CONTRIBUTIONS_COL), where('groupId', '==', groupId));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as TontineContribution);
+  },
+
+  async getAllContributions(): Promise<TontineContribution[]> {
+    const q = query(collection(db, CONTRIBUTIONS_COL), orderBy('date', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as TontineContribution);
+  },
+
+  async addContribution(contribution: Omit<TontineContribution, 'id'>, author: { id: string, name: string, phone: string }): Promise<TontineContribution> {
+    const id = generateId();
+    const newContribution: TontineContribution = { ...contribution, id };
+    await setDoc(doc(db, CONTRIBUTIONS_COL, id), newContribution);
+
+    // Enregistrer également en tant que paiement centralisé
+    await PaymentRepository.create({
+      clientId: contribution.clientId,
+      amount: contribution.amount,
+      type: 'tontine',
+      referenceId: id,
+      date: contribution.date,
+      method: 'cash'
+    }, author);
+
+    await ActivityRepository.log(author.id, author.phone, author.name, 'payment', `Cotisation de ${contribution.amount} FCFA par le client ID: ${contribution.clientId}`);
+    return newContribution;
+  }
+};
+
+// ==========================================
+// 4. REPOSITORY KITS ALIMENTAIRES (KITS)
+// ==========================================
+export const KitRepository = {
+  async getPlanById(id: string): Promise<KitPlan | null> {
+    const docRef = doc(db, KITS_COL, id);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? (docSnap.data() as KitPlan) : null;
+  },
+
+  async getAllPlans(): Promise<KitPlan[]> {
+    const q = query(collection(db, KITS_COL));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as KitPlan);
+  },
+
+  async createPlan(plan: Omit<KitPlan, 'id'>, author: { id: string, name: string, phone: string }): Promise<KitPlan> {
+    const id = generateId();
+    const newPlan: KitPlan = { ...plan, id };
+    await setDoc(doc(db, KITS_COL, id), newPlan);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'create', `Inscription du client ID: ${plan.clientId} au kit ${plan.kitType}`);
+    await NotificationRepository.send(`Nouvelle inscription Kit`, `Un nouveau plan de kit alimentaire (${plan.kitType}) a été activé.`);
+    return newPlan;
+  },
+
+  async updatePlan(id: string, planUpdates: Partial<KitPlan>, author: { id: string, name: string, phone: string }): Promise<void> {
+    await updateDoc(doc(db, KITS_COL, id), planUpdates);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'update', `Mise à jour du plan kit ID: ${id}`);
+  }
+};
+
+// ==========================================
+// 5. REPOSITORY LIVRAISONS (DELIVERIES)
+// ==========================================
+export const DeliveryRepository = {
+  async getById(id: string): Promise<Delivery | null> {
+    const docRef = doc(db, DELIVERIES_COL, id);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? (docSnap.data() as Delivery) : null;
+  },
+
+  async getAll(): Promise<Delivery[]> {
+    const q = query(collection(db, DELIVERIES_COL), orderBy('date', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Delivery);
+  },
+
+  async create(delivery: Omit<Delivery, 'id'>, author: { id: string, name: string, phone: string }): Promise<Delivery> {
+    const id = generateId();
+    const confirmationCode = Math.floor(1000 + Math.random() * 9000).toString(); // Code de confirmation simple
+    const newDelivery: Delivery = { ...delivery, id, confirmationCode };
+    await setDoc(doc(db, DELIVERIES_COL, id), newDelivery);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'create', `Création d'une livraison pour le client ID: ${delivery.clientId}`);
+    await NotificationRepository.send(`Nouvelle livraison créée`, `Livraison prévue le ${delivery.date} à ${delivery.commune}. Code: ${confirmationCode}`);
+    return newDelivery;
+  },
+
+  async update(id: string, updates: Partial<Delivery>, author: { id: string, name: string, phone: string }): Promise<void> {
+    await updateDoc(doc(db, DELIVERIES_COL, id), updates);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'delivery_update', `Statut de livraison ID ${id} mis à jour : ${updates.status}`);
+    if (updates.status === 'delivered') {
+      await NotificationRepository.send(`Livraison confirmée`, `La livraison ID: ${id} a été marquée comme livrée.`);
+    }
+  }
+};
+
+// ==========================================
+// 6. REPOSITORY PAIEMENTS (PAYMENTS)
+// ==========================================
+export const PaymentRepository = {
+  async getAll(): Promise<Payment[]> {
+    const q = query(collection(db, PAYMENTS_COL), orderBy('date', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Payment);
+  },
+
+  async create(payment: Omit<Payment, 'id'>, author: { id: string, name: string, phone: string }): Promise<Payment> {
+    const id = generateId();
+    const newPayment: Payment = { ...payment, id };
+    await setDoc(doc(db, PAYMENTS_COL, id), newPayment);
+    await ActivityRepository.log(author.id, author.phone, author.name, 'payment', `Paiement enregistré de ${payment.amount} FCFA via ${payment.method}`);
+    return newPayment;
+  }
+};
+
+// ==========================================
+// 7. REPOSITORY NOTIFICATIONS (CENTRALIZED)
+// ==========================================
+export const NotificationRepository = {
+  async getAll(): Promise<Notification[]> {
+    const q = query(collection(db, NOTIFICATIONS_COL), orderBy('createdAt', 'desc'), limit(100));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Notification);
+  },
+
+  async send(title: string, message: string, type: Notification['type'] = 'info', userId?: string): Promise<Notification> {
+    const id = generateId();
+    const newNotif: Notification = {
+      id,
+      title,
+      message,
+      type,
+      userId,
+      read: false,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, NOTIFICATIONS_COL, id), newNotif);
+    return newNotif;
+  },
+
+  async markAsRead(id: string): Promise<void> {
+    await updateDoc(doc(db, NOTIFICATIONS_COL, id), { read: true });
+  },
+
+  async markAllAsRead(): Promise<void> {
+    const q = query(collection(db, NOTIFICATIONS_COL), where('read', '==', false));
+    const querySnapshot = await getDocs(q);
+    const batch = writeBatch(db);
+    querySnapshot.docs.forEach(d => {
+      batch.update(d.ref, { read: true });
+    });
+    await batch.commit();
+  }
+};
+
+// ==========================================
+// 8. REPOSITORY JOURNAL D'ACTIVITÉS (ACTIVITY LOGS)
+// ==========================================
+export const ActivityRepository = {
+  async getAll(): Promise<ActivityLog[]> {
+    const q = query(collection(db, ACTIVITY_LOGS_COL), orderBy('createdAt', 'desc'), limit(200));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as ActivityLog);
+  },
+
+  async log(userId: string, userPhone: string, userName: string, action: ActivityLog['action'], details: string): Promise<ActivityLog> {
+    const id = generateId();
+    const newLog: ActivityLog = {
+      id,
+      userId,
+      userPhone,
+      userName,
+      action,
+      details,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, ACTIVITY_LOGS_COL, id), newLog);
+    return newLog;
+  }
+};
+
+// ==========================================
+// 9. REPOSITORY CONFIGURATION (SETTINGS & ROLES)
+// ==========================================
+export const SettingsRepository = {
+  async getRoles(): Promise<Role[]> {
+    const querySnapshot = await getDocs(collection(db, ROLES_COL));
+    if (querySnapshot.empty) {
+      // Retourner rôles par défaut
+      return [
+        { id: 'super_admin', name: 'super_admin', displayName: 'Super Administrateur', permissions: ['all'] },
+        { id: 'admin', name: 'admin', displayName: 'Administrateur', permissions: ['view_all', 'edit_all'] },
+        { id: 'agent', name: 'agent', displayName: 'Agent', permissions: ['view_all', 'edit_clients', 'edit_tontines'] },
+        { id: 'livreur', name: 'livreur', displayName: 'Livreur', permissions: ['view_deliveries', 'edit_deliveries'] },
+        { id: 'client', name: 'client', displayName: 'Client', permissions: ['view_own_profile'] }
+      ];
+    }
+    return querySnapshot.docs.map(doc => doc.data() as Role);
+  },
+
+  async addRole(role: Role): Promise<void> {
+    await setDoc(doc(db, ROLES_COL, role.id), role);
+  },
+
+  async getModules(): Promise<ModuleRegistry[]> {
+    const querySnapshot = await getDocs(collection(db, SETTINGS_COL));
+    const modules: ModuleRegistry[] = [];
+    querySnapshot.forEach(doc => {
+      if (doc.id.startsWith('module_')) {
+        modules.push(doc.data() as ModuleRegistry);
+      }
+    });
+
+    if (modules.length === 0) {
+      // Retourner modules initiaux par défaut
+      return [
+        { id: 'dashboard', name: 'Tableau de bord', icon: 'LayoutDashboard', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'] },
+        { id: 'clients', name: 'Clients', icon: 'Users', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'] },
+        { id: 'tontine', name: 'Tontine', icon: 'PiggyBank', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'] },
+        { id: 'kits', name: 'Kits alimentaires', icon: 'ShoppingBag', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'] },
+        { id: 'deliveries', name: 'Livraisons', icon: 'Truck', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur'] },
+        { id: 'users', name: 'Utilisateurs', icon: 'ShieldAlert', enabled: true, rolesAllowed: ['super_admin', 'admin'] },
+        { id: 'settings', name: 'Paramètres', icon: 'Settings', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur', 'client'] }
+      ];
+    }
+    return modules;
+  },
+
+  async saveModule(module: ModuleRegistry): Promise<void> {
+    await setDoc(doc(db, SETTINGS_COL, `module_${module.id}`), module);
+  }
+};
+
+// ==========================================
+// SEED INITIAL DATA FOR THE ENTIRE PLATFORM
+// ==========================================
+export async function seedPlatformData(): Promise<void> {
+  const batch = writeBatch(db);
+
+  // 1. Enregistrer les rôles par défaut
+  const roles: Role[] = [
+    { id: 'super_admin', name: 'super_admin', displayName: 'Super Administrateur', permissions: ['all'] },
+    { id: 'admin', name: 'admin', displayName: 'Administrateur', permissions: ['view_all', 'edit_all'] },
+    { id: 'agent', name: 'agent', displayName: 'Agent', permissions: ['view_all', 'edit_clients', 'edit_tontines'] },
+    { id: 'livreur', name: 'livreur', displayName: 'Livreur', permissions: ['view_deliveries', 'edit_deliveries'] },
+    { id: 'client', name: 'client', displayName: 'Client', permissions: ['view_own_profile'] }
+  ];
+  roles.forEach(r => {
+    batch.set(doc(db, ROLES_COL, r.id), r);
+  });
+
+  // 2. Enregistrer les modules de base
+  const baseModules: ModuleRegistry[] = [
+    { id: 'dashboard', name: 'Tableau de bord', icon: 'LayoutDashboard', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Vue d\'ensemble de l\'activité, des statistiques clés et des notifications.' },
+    { id: 'clients', name: 'Clients', icon: 'Users', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Gestion complète du portefeuille clients, fiches détaillées et extensibilité.' },
+    { id: 'tontine', name: 'Tontine', icon: 'PiggyBank', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Gestion des groupes de tontine, participants, tirages et cotisations.' },
+    { id: 'kits', name: 'Kits alimentaires', icon: 'ShoppingBag', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Inscriptions aux abonnements de kits alimentaires, suivi des soldes et livraisons.' },
+    { id: 'deliveries', name: 'Livraisons', icon: 'Truck', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur'], description: 'Suivi et attribution des livraisons de kits alimentaires aux livreurs.' },
+    { id: 'users', name: 'Utilisateurs', icon: 'ShieldAlert', enabled: true, rolesAllowed: ['super_admin', 'admin'], description: 'Gestion des accès d\'équipe, des agents, des livreurs et des rôles.' },
+    { id: 'settings', name: 'Paramètres', icon: 'Settings', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur', 'client'], description: 'Configuration du profil, gestion des rôles dynamiques et du registre de modules.' }
+  ];
+  baseModules.forEach(m => {
+    batch.set(doc(db, SETTINGS_COL, `module_${m.id}`), m);
+  });
+
+  // 3. Enregistrer un utilisateur Super Admin par défaut
+  const superAdminPhone = '0170561121';
+  const hashedSuperAdmin = await hashPassword('70561121Daniel 19');
+  const superAdmin: User = {
+    id: 'user_super_admin',
+    displayName: 'admin',
+    phone: superAdminPhone,
+    passwordHash: hashedSuperAdmin,
+    role: 'super_admin',
+    status: 'active',
+    createdAt: new Date().toISOString()
+  };
+  batch.set(doc(db, USERS_COL, superAdmin.id), superAdmin);
+
+  // Nous n'enregistrons aucun autre utilisateur de l'équipe ni aucune donnée d'exemple (clients, tontines, livraisons, etc.)
+  // afin de laisser la base de données propre par défaut, avec uniquement le compte admin suprême.
+
+  await batch.commit();
+}

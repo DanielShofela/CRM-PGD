@@ -1,0 +1,6 @@
+{
+  "name": "Penta CRM",
+  "description": "Plateforme SaaS ERP & CRM modulaire pour PENTA GAD Distribution, gérant les clients, tontines, kits alimentaires et livraisons.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

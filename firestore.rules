@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Catch-all default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Allow read/write for all application collections (custom CRM authentication & data)
+    match /users/{document} {
+      allow read, write: if true;
+    }
+    match /clients/{document} {
+      allow read, write: if true;
+    }
+    match /tontine_groups/{document} {
+      allow read, write: if true;
+    }
+    match /tontine_contributions/{document} {
+      allow read, write: if true;
+    }
+    match /kits/{document} {
+      allow read, write: if true;
+    }
+    match /deliveries/{document} {
+      allow read, write: if true;
+    }
+    match /payments/{document} {
+      allow read, write: if true;
+    }
+    match /notifications/{document} {
+      allow read, write: if true;
+    }
+    match /activity_logs/{document} {
+      allow read, write: if true;
+    }
+    match /roles/{document} {
+      allow read, write: if true;
+    }
+    match /settings/{document} {
+      allow read, write: if true;
+    }
+  }
+}
