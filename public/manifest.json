@@ -1,0 +1,24 @@
+{
+  "short_name": "Penta CRM",
+  "name": "Penta CRM - GAD Distribution",
+  "description": "Plateforme SaaS ERP & CRM de gestion pour PENTA GAD Distribution",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "display": "standalone",
+  "orientation": "any"
+}
