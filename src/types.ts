@@ -137,3 +137,34 @@ export interface PlatformSettings {
   siteIconUrl: string;
 }
 
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  image: string;
+}
+
+export interface Kit {
+  id: string;
+  name: string;
+  categoryId: string;
+  dailyAmount: string;
+  totalValue: string;
+  images: string[];
+  benefits: string[];
+  products: string[];
+  deliveryInfo: string;
+}
+
+export interface Subscription {
+  id: string;
+  customerName: string;
+  phone: string;
+  address: string;
+  kitId: string;
+  kitName: string;
+  status: 'En attente' | 'Contacté' | 'Livré';
+  createdAt: string;
+}
+

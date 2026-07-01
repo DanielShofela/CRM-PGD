@@ -16,7 +16,10 @@ import {
   ActivityLog,
   Role,
   ModuleRegistry,
-  PlatformSettings
+  PlatformSettings,
+  Product,
+  Kit,
+  Subscription
 } from '../types';
 import {
   UserRepository,
@@ -28,7 +31,10 @@ import {
   NotificationRepository,
   ActivityRepository,
   SettingsRepository,
-  seedPlatformData
+  seedPlatformData,
+  ProductRepository,
+  KitDefinitionRepository,
+  SubscriptionRepository
 } from '../repositories/database';
 import { db } from '../lib/firebase';
 import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
@@ -59,6 +65,9 @@ interface AppContextType {
   logs: ActivityLog[];
   roles: Role[];
   modules: ModuleRegistry[];
+  products: Product[];
+  kitDefinitions: Kit[];
+  subscriptions: Subscription[];
 
   // General state
   loading: boolean;
@@ -100,6 +109,18 @@ interface AppContextType {
 
   platformSettings: { siteName: string; siteIconUrl: string };
   updatePlatformSettings: (settings: { siteName: string; siteIconUrl: string }) => Promise<void>;
+
+  addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+
+  addKitDefinition: (kit: Omit<Kit, 'id'>) => Promise<void>;
+  updateKitDefinition: (id: string, updates: Partial<Kit>) => Promise<void>;
+  deleteKitDefinition: (id: string) => Promise<void>;
+
+  addSubscription: (sub: Omit<Subscription, 'id' | 'createdAt'>) => Promise<void>;
+  updateSubscriptionStatus: (id: string, status: Subscription['status']) => Promise<void>;
+  deleteSubscription: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -124,6 +145,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<ModuleRegistry[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [kitDefinitions, setKitDefinitions] = useState<Kit[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -257,7 +281,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubscribers: (() => void)[] = [];
 
     let activeListenersCount = 0;
-    const totalCriticalListeners = 9;
+    const totalCriticalListeners = 10;
 
     const checkLoadingComplete = () => {
       activeListenersCount++;
@@ -423,6 +447,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       unsubscribers.push(unsubModules);
 
+      // 12. Souscriptions (Leads)
+      const unsubSubs = onSnapshot(
+        query(collection(db, 'subscriptions'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          setSubscriptions(snapshot.docs.map(doc => doc.data() as Subscription));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Subscriptions:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubSubs);
+
     } catch (err: any) {
       console.error("Erreur lors de l'initialisation des écouteurs temps réel :", err);
       setError("Erreur d'initialisation de la synchronisation en temps réel.");
@@ -433,6 +471,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsubscribers.forEach(unsub => unsub());
     };
   }, [currentUser]);
+
+  // Écouteurs inconditionnels pour les visiteurs publics (catalogue produits et kits)
+  useEffect(() => {
+    const unsubProducts = onSnapshot(
+      query(collection(db, 'products'), orderBy('name', 'asc')),
+      (snapshot) => {
+        setProducts(snapshot.docs.map(doc => doc.data() as Product));
+      },
+      (err) => console.error("Erreur temps réel Products:", err)
+    );
+
+    const unsubKitsDef = onSnapshot(
+      query(collection(db, 'kit_definitions'), orderBy('name', 'asc')),
+      (snapshot) => {
+        setKitDefinitions(snapshot.docs.map(doc => doc.data() as Kit));
+      },
+      (err) => console.error("Erreur temps réel Kit Definitions:", err)
+    );
+
+    return () => {
+      unsubProducts();
+      unsubKitsDef();
+    };
+  }, []);
 
   const seedData = async () => {
     setLoading(true);
@@ -653,6 +715,66 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addProduct = async (product: Omit<Product, 'id'>) => {
+    await ProductRepository.create(product);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'create', `Ajout d'un produit maître : ${product.name}`);
+    }
+  };
+
+  const updateProduct = async (id: string, updates: Partial<Product>) => {
+    await ProductRepository.update(id, updates);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'update', `Mise à jour du produit maître ID: ${id}`);
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    await ProductRepository.delete(id);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'delete', `Suppression du produit maître ID: ${id}`);
+    }
+  };
+
+  const addKitDefinition = async (kit: Omit<Kit, 'id'>) => {
+    await KitDefinitionRepository.create(kit);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'create', `Configuration d'un kit complexe : ${kit.name}`);
+    }
+  };
+
+  const updateKitDefinition = async (id: string, updates: Partial<Kit>) => {
+    await KitDefinitionRepository.update(id, updates);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'update', `Mise à jour de la configuration du kit ID: ${id}`);
+    }
+  };
+
+  const deleteKitDefinition = async (id: string) => {
+    await KitDefinitionRepository.delete(id);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'delete', `Suppression du kit ID: ${id}`);
+    }
+  };
+
+  const addSubscription = async (sub: Omit<Subscription, 'id' | 'createdAt'>) => {
+    await SubscriptionRepository.create(sub);
+  };
+
+  const updateSubscriptionStatus = async (id: string, status: Subscription['status']) => {
+    await SubscriptionRepository.updateStatus(id, status);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'update', `Statut du lead/souscription ID: ${id} mis à jour en : ${status}`);
+    }
+  };
+
+  const deleteSubscription = async (id: string) => {
+    await SubscriptionRepository.delete(id);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'delete', `Suppression du lead/souscription ID: ${id}`);
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -679,6 +801,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logs,
         roles,
         modules,
+        products,
+        kitDefinitions,
+        subscriptions,
         loading,
         error,
         setError,
@@ -706,7 +831,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationAsRead,
         markAllNotificationsAsRead,
         platformSettings,
-        updatePlatformSettings
+        updatePlatformSettings,
+        addProduct,
+        updateProduct,
+        deleteProduct,
+        addKitDefinition,
+        updateKitDefinition,
+        deleteKitDefinition,
+        addSubscription,
+        updateSubscriptionStatus,
+        deleteSubscription
       }}
     >
       {children}

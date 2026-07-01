@@ -40,5 +40,14 @@ service cloud.firestore {
     match /settings/{document} {
       allow read, write: if true;
     }
+    match /products/{document} {
+      allow read, write: if true;
+    }
+    match /kit_definitions/{document} {
+      allow read, write: if true;
+    }
+    match /subscriptions/{document} {
+      allow read, write: if true;
+    }
   }
 }

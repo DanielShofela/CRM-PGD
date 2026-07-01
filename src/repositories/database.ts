@@ -30,7 +30,10 @@ import {
   ActivityLog,
   Role,
   ModuleRegistry,
-  PlatformSettings
+  PlatformSettings,
+  Product,
+  Kit,
+  Subscription
 } from '../types';
 import { hashPassword } from '../utils/crypto';
 
@@ -504,6 +507,93 @@ export const SettingsRepository = {
       id: 'global_config',
       ...settings
     });
+  }
+};
+
+// ==========================================
+// 10. REPOSITORY PRODUITS (PRODUCTS CATALOG)
+// ==========================================
+export const ProductRepository = {
+  async getAll(): Promise<Product[]> {
+    const q = query(collection(db, 'products'), orderBy('name', 'asc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Product);
+  },
+
+  async create(product: Omit<Product, 'id'>): Promise<Product> {
+    const id = generateId();
+    const newProduct: Product = { ...product, id };
+    await setDoc(doc(db, 'products', id), newProduct);
+    return newProduct;
+  },
+
+  async update(id: string, updates: Partial<Product>): Promise<void> {
+    await updateDoc(doc(db, 'products', id), updates);
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, 'products', id));
+  }
+};
+
+// ==========================================
+// 11. REPOSITORY KITS CATALOGUE (KIT DEFINITIONS)
+// ==========================================
+export const KitDefinitionRepository = {
+  async getAll(): Promise<Kit[]> {
+    const q = query(collection(db, 'kit_definitions'), orderBy('name', 'asc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Kit);
+  },
+
+  async create(kit: Omit<Kit, 'id'>): Promise<Kit> {
+    const id = generateId();
+    const newKit: Kit = { ...kit, id };
+    await setDoc(doc(db, 'kit_definitions', id), newKit);
+    return newKit;
+  },
+
+  async update(id: string, updates: Partial<Kit>): Promise<void> {
+    await updateDoc(doc(db, 'kit_definitions', id), updates);
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, 'kit_definitions', id));
+  }
+};
+
+// ==========================================
+// 12. REPOSITORY SOUSCRIPTIONS / LEADS (SUBSCRIPTIONS)
+// ==========================================
+export const SubscriptionRepository = {
+  async getAll(): Promise<Subscription[]> {
+    const q = query(collection(db, 'subscriptions'), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => doc.data() as Subscription);
+  },
+
+  async create(sub: Omit<Subscription, 'id' | 'createdAt'>): Promise<Subscription> {
+    const id = generateId();
+    const newSub: Subscription = {
+      ...sub,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    await setDoc(doc(db, 'subscriptions', id), newSub);
+    // Notification et log d'activité
+    await NotificationRepository.send(
+      `Nouveau lead d'inscription`,
+      `Client ${sub.customerName} s'est inscrit au kit ${sub.kitName}. Tél: ${sub.phone}`
+    );
+    return newSub;
+  },
+
+  async updateStatus(id: string, status: Subscription['status']): Promise<void> {
+    await updateDoc(doc(db, 'subscriptions', id), { status });
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, 'subscriptions', id));
   }
 };
 

@@ -3,12 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
-import { db } from '../lib/firebase';
-import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
-import { ClientRepository, ActivityRepository, NotificationRepository } from '../repositories/database';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Phone, 
   User, 
@@ -20,9 +17,19 @@ import {
   CheckCircle, 
   ArrowLeft,
   X,
-  Sparkles
+  Sparkles,
+  ShoppingBag,
+  Grid,
+  Filter,
+  Info,
+  Calendar,
+  DollarSign,
+  Tag,
+  Check,
+  Zap,
+  ArrowRight
 } from 'lucide-react';
-import { Client, Attachment } from '../types';
+import { Client, Attachment, Kit, Subscription } from '../types';
 
 // Image Compression Helper
 function compressImage(file: File, maxWidth = 300, maxHeight = 300, quality = 0.7): Promise<string> {
@@ -45,7 +52,7 @@ function compressImage(file: File, maxWidth = 300, maxHeight = 300, quality = 0.
         } else {
           if (height > maxHeight) {
             width *= maxHeight / height;
-            height = maxHeight;
+            width = maxHeight;
           }
         }
 
@@ -76,9 +83,78 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// Default fallback kits when Firestore is empty
+const DEFAULT_KITS: Kit[] = [
+  {
+    id: 'default_bronze',
+    name: 'Kit Bronze - Essentiel',
+    categoryId: 'alimentaire',
+    dailyAmount: '100 FCFA',
+    totalValue: '15 000 FCFA',
+    images: ['https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80'],
+    benefits: ['Économique', 'Idéal pour célibataire', 'Produits de première nécessité'],
+    products: ['Riz parfumé 10kg', 'Huile de table 1.5L', 'Sel fin iodé 1kg', 'Pâtes alimentaires (4 paquets)'],
+    deliveryInfo: 'Livraison à domicile sous 48h après validation du premier acompte.'
+  },
+  {
+    id: 'default_silver',
+    name: 'Kit Silver - Complet',
+    categoryId: 'alimentaire',
+    dailyAmount: '150 FCFA',
+    totalValue: '25 000 FCFA',
+    images: ['https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600&q=80'],
+    benefits: ['Rapport qualité-prix imbattable', 'Idéal pour couple', 'Produits de base complets'],
+    products: ['Riz brisé 25kg', 'Huile de table 5L', 'Sucre en poudre 2kg', 'Tomate concentrée (3 boîtes)', 'Savon de ménage (lot de 4)', 'Pâtes alimentaires (6 paquets)'],
+    deliveryInfo: 'Livraison gratuite en commune chaque samedi.'
+  },
+  {
+    id: 'default_gold',
+    name: 'Kit Gold - Famille',
+    categoryId: 'alimentaire',
+    dailyAmount: '300 FCFA',
+    totalValue: '45 000 FCFA',
+    images: ['https://images.unsplash.com/photo-1506084868230-bb9d95c24759?w=600&q=80'],
+    benefits: ['Stock mensuel complet', 'Idéal pour grande famille', 'Livraison prioritaire'],
+    products: ['Riz de luxe 50kg', 'Huile de table 10L', 'Sucre de canne 5kg', 'Lait concentré sucré (6 boîtes)', 'Conserves de sardines (10 boîtes)', 'Pâtes alimentaires (1 carton)', 'Épices variées de cuisine'],
+    deliveryInfo: 'Livraison à domicile garantie sous 24h avec suivi d\'itinéraire.'
+  },
+  {
+    id: 'default_cuisine',
+    name: 'Pack Cuisine Facile',
+    categoryId: 'electromenager',
+    dailyAmount: '500 FCFA',
+    totalValue: '60 000 FCFA',
+    images: ['https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=600&q=80'],
+    benefits: ['Marques certifiées', 'Garantie 12 mois', 'Paiement ultra-flexible'],
+    products: ['Robot Mixeur Multifonction', 'Cuiseur à riz automatique 1.8L', 'Four à micro-ondes 20L'],
+    deliveryInfo: 'Livré avec certificat de garantie et manuel d\'utilisation.'
+  },
+  {
+    id: 'default_confort',
+    name: 'Pack Confort Maison',
+    categoryId: 'electromenager',
+    dailyAmount: '250 FCFA',
+    totalValue: '35 000 FCFA',
+    images: ['https://images.unsplash.com/photo-1622737133809-d95047b9e673?w=600&q=80'],
+    benefits: ['Faible consommation', 'Autonomie renforcée', 'Idéal pour les coupures'],
+    products: ['Ventilateur Rechargeable Haute Puissance', 'Fer à repasser vapeur', 'Bouilloire électrique en inox 1.7L'],
+    deliveryInfo: 'Livraison gratuite à domicile. Service après-vente inclus.'
+  }
+];
+
 export const ClientRegistrationView: React.FC = () => {
-  const { platformSettings } = useApp();
-  // Champs
+  const { platformSettings, kitDefinitions, addSubscription, addClient } = useApp();
+  
+  // Choose between public kitDefinitions from firestore or static defaults
+  const kitsToDisplay = kitDefinitions.length > 0 ? kitDefinitions : DEFAULT_KITS;
+
+  // Selected state
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [activeKit, setActiveKit] = useState<Kit | null>(null);
+  const [isSubscribeModalOpen, setIsSubscribeModalOpen] = useState(false);
+  const [generalRegistrationMode, setGeneralRegistrationMode] = useState(false);
+
+  // Form fields
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -86,23 +162,24 @@ export const ClientRegistrationView: React.FC = () => {
   const [quartier, setQuartier] = useState('');
   const [address, setAddress] = useState('');
   const [observations, setObservations] = useState('');
-  
-  // Photo & Pièces Jointes
+  const [autoRegisterInCRM, setAutoRegisterInCRM] = useState(true);
+
+  // Photo & attachments
   const [photoDataUrl, setPhotoDataUrl] = useState<string>('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  
-  // UI states
+  const [dragActivePhoto, setDragActivePhoto] = useState(false);
+  const [dragActiveFile, setDragActiveFile] = useState(false);
+
+  // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [dragActivePhoto, setDragActivePhoto] = useState(false);
-  const [dragActiveFile, setDragActiveFile] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const errorRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (error) {
       setTimeout(() => {
         errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -146,11 +223,10 @@ export const ClientRegistrationView: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // Seul le numéro de téléphone est obligatoire
     if (!phone.trim()) {
       setError("Le numéro de téléphone est obligatoire.");
       return;
@@ -159,79 +235,133 @@ export const ClientRegistrationView: React.FC = () => {
     setLoading(true);
 
     try {
-      const cleanPhone = phone.trim();
-      const existingClient = await ClientRepository.getByPhone(cleanPhone);
-      if (existingClient) {
-        setError("Ce numéro de téléphone est déjà enregistré dans notre système.");
-        setLoading(false);
-        return;
+      const customerName = `${firstName.trim()} ${lastName.trim()}`.trim() || 'Client public';
+      
+      // 1. Save Lead in subscriptions collection
+      await addSubscription({
+        customerName,
+        phone: phone.trim(),
+        address: `${commune}, ${quartier ? quartier + ', ' : ''}${address.trim()}`,
+        kitId: activeKit?.id || 'general',
+        kitName: activeKit?.name || 'Inscription Générale',
+        status: 'En attente'
+      });
+
+      // 2. Seamlessly register client in CRM if selected
+      if (autoRegisterInCRM) {
+        const payload: Omit<Client, 'id' | 'createdAt'> = {
+          phone: phone.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          commune,
+          quartier: quartier.trim(),
+          address: address.trim(),
+          photoUrl: photoDataUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+          status: 'active',
+          observations: observations.trim() || `Souscription demandée pour le pack: ${activeKit?.name || 'Général'}`,
+          customFields: { 
+            packInteret: activeKit?.name || 'Aucun pack spécifique',
+            canal: 'Showcase Public Vitrine' 
+          },
+          attachments: attachments
+        };
+        await addClient(payload);
       }
 
-      const payload: Omit<Client, 'id' | 'createdAt'> = {
-        phone: cleanPhone,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        commune,
-        quartier: quartier.trim(),
-        address: address.trim(),
-        photoUrl: photoDataUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
-        status: 'active',
-        observations: observations.trim() || 'Auto-inscrit via le lien public.',
-        customFields: { modeInscription: 'Lien public de partage' },
-        attachments: attachments
-      };
-
-      await ClientRepository.create(payload);
       setSuccess(true);
+      setIsSubscribeModalOpen(false);
+      setGeneralRegistrationMode(false);
     } catch (err: any) {
       console.error(err);
-      setError("Une erreur est survenue lors de l'enregistrement : " + err.message);
+      setError("Une erreur s'est produite lors de la transmission : " + err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleOpenSubscribe = (kit: Kit) => {
+    setActiveKit(kit);
+    setObservations(`Intéressé par le pack "${kit.name}".`);
+    setIsSubscribeModalOpen(true);
+  };
+
+  const handleOpenGeneralRegistration = () => {
+    setActiveKit(null);
+    setObservations('Demande d\'auto-inscription simple.');
+    setGeneralRegistrationMode(true);
+  };
+
+  const filteredKits = selectedCategory === 'all' 
+    ? kitsToDisplay 
+    : kitsToDisplay.filter(k => k.categoryId === selectedCategory);
+
   if (success) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 font-sans">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 font-sans selection:bg-emerald-500 selection:text-white">
         <motion.div 
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-8 rounded-2xl shadow-xl max-w-md w-full text-center space-y-6"
+          className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-8 rounded-3xl shadow-xl max-w-md w-full text-center space-y-6"
         >
           <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mx-auto shadow-sm">
-            <CheckCircle className="w-10 h-10" />
+            <CheckCircle className="w-10 h-10 animate-bounce" />
           </div>
           
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white font-display">Inscription Réussie !</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white font-display">Demande Transmise !</h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm">
-              Vos coordonnées ont été transmises avec succès à l'équipe de **{platformSettings.siteName}**.
+              Votre demande de souscription pour le kit de **{platformSettings.siteName}** a été enregistrée avec succès.
             </p>
           </div>
 
-          <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800 text-left space-y-2 text-xs">
-            <p className="font-semibold text-slate-700 dark:text-slate-300">Récapitulatif de votre profil :</p>
+          <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 text-left space-y-2 text-xs">
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Récapitulatif de votre demande :</p>
             <div className="grid grid-cols-2 gap-2 text-slate-500">
               <div>
                 <span className="text-[9px] uppercase font-bold text-slate-400 block">Téléphone</span>
-                <strong>{phone}</strong>
+                <strong className="text-slate-850 dark:text-slate-250">{phone}</strong>
               </div>
-              {firstName || lastName ? (
-                <div>
-                  <span className="text-[9px] uppercase font-bold text-slate-400 block">Nom</span>
-                  <strong>{firstName} {lastName}</strong>
-                </div>
-              ) : null}
               <div>
-                <span className="text-[9px] uppercase font-bold text-slate-400 block">Commune / Quartier</span>
-                <strong>{commune} {quartier ? `- ${quartier}` : ''}</strong>
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Nom</span>
+                <strong className="text-slate-850 dark:text-slate-250">{firstName} {lastName}</strong>
               </div>
+              <div className="col-span-2">
+                <span className="text-[9px] uppercase font-bold text-slate-400 block">Produit / Kit Sélectionné</span>
+                <strong className="text-emerald-600 dark:text-emerald-400">{activeKit ? activeKit.name : "Inscription générale"}</strong>
+              </div>
+              {activeKit && (
+                <>
+                  <div>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">Mensualité</span>
+                    <strong className="text-slate-850 dark:text-slate-250">{activeKit.dailyAmount} / jour</strong>
+                  </div>
+                  <div>
+                    <span className="text-[9px] uppercase font-bold text-slate-400 block">Valeur Totale</span>
+                    <strong className="text-slate-850 dark:text-slate-250">{activeKit.totalValue}</strong>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
+          <button
+            onClick={() => {
+              setSuccess(false);
+              setPhone('');
+              setFirstName('');
+              setLastName('');
+              setQuartier('');
+              setAddress('');
+              setPhotoDataUrl('');
+              setAttachments([]);
+            }}
+            className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors"
+          >
+            Retour au catalogue
+          </button>
+
           <p className="text-xs text-slate-400 italic">
-            Vous pouvez fermer cette page. Notre équipe prendra contact avec vous prochainement.
+            Notre équipe prendra contact avec vous d'ici quelques heures pour la livraison et la validation de vos acomptes.
           </p>
         </motion.div>
       </div>
@@ -239,260 +369,539 @@ export const ClientRegistrationView: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center py-10 px-4 font-sans">
-      {/* Brand Header */}
-      <div className="text-center mb-8 space-y-1.5 max-w-md flex flex-col items-center">
-        <div className="inline-flex p-3 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl mb-2 shadow-sm items-center justify-center">
-          {platformSettings.siteIconUrl ? (
-            <img 
-              src={platformSettings.siteIconUrl} 
-              alt="Logo" 
-              className="w-10 h-10 object-contain rounded-xl" 
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <Sparkles className="w-6 h-6 animate-pulse text-emerald-600" />
-          )}
-        </div>
-        <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-white">{platformSettings.siteName}</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider font-semibold">
-          Fiche d'auto-inscription client
-        </p>
-      </div>
-
-      <motion.div 
-        initial={{ y: 15, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl shadow-xl w-full max-w-xl overflow-hidden flex flex-col"
-      >
-        <div className="p-5 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/40">
-          <h2 className="font-bold text-slate-800 dark:text-white text-base">Remplissez vos informations</h2>
-          <p className="text-xs text-slate-400 mt-0.5">Veuillez renseigner vos coordonnées pour simplifier vos tontines et vos livraisons.</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 text-sm">
-          {error && (
-            <div ref={errorRef} className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 text-xs font-semibold">
-              {error}
-            </div>
-          )}
-
-          {/* Téléphone (Obligatoire) */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
-              <Phone className="w-3.5 h-3.5" /> Numéro de téléphone <span className="text-rose-500">* obligatoire</span>
-            </label>
-            <input
-              type="tel"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Ex: 0749123456"
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 focus:border-emerald-500 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white font-medium"
-            />
-          </div>
-
-          {/* Prénom & Nom de famille (Optionnels) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Prénom (Optionnel)</label>
-              <input
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                placeholder="Ex: Jean-Marc"
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Nom (Optionnel)</label>
-              <input
-                type="text"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                placeholder="Ex: Kouassi"
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
-              />
-            </div>
-          </div>
-
-          {/* Commune & Quartier */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Commune</label>
-              <select
-                value={commune}
-                onChange={(e) => setCommune(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-              >
-                <option value="Cocody">Cocody</option>
-                <option value="Yopougon">Yopougon</option>
-                <option value="Abobo">Abobo</option>
-                <option value="Marcory">Marcory</option>
-                <option value="Plateau">Plateau</option>
-                <option value="Treichville">Treichville</option>
-                <option value="Koumassi">Koumassi</option>
-                <option value="Adjamé">Adjamé</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Quartier (Optionnel)</label>
-              <input
-                type="text"
-                value={quartier}
-                onChange={(e) => setQuartier(e.target.value)}
-                placeholder="Ex: Angré 7ème Tranche"
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-              />
-            </div>
-          </div>
-
-          {/* Adresse Géographique */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5" /> Adresse Géographique (Optionnel)
-            </label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="Ex: Cité Verte, Villa 45, face à la pharmacie"
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-            />
-          </div>
-
-          {/* Photo de profil (UPLOADER REEL) */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
-              <Camera className="w-3.5 h-3.5" /> Photo de Profil (Optionnel)
-            </label>
-            <div 
-              onDragOver={(e) => { e.preventDefault(); setDragActivePhoto(true); }}
-              onDragLeave={() => setDragActivePhoto(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragActivePhoto(false);
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  handlePhotoUpload(e.dataTransfer.files[0]);
-                }
-              }}
-              onClick={() => photoInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1.5 ${
-                dragActivePhoto 
-                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' 
-                  : 'border-slate-200 dark:border-slate-800 hover:border-emerald-500/50'
-              }`}
-            >
-              <input 
-                type="file" 
-                ref={photoInputRef}
-                onChange={(e) => e.target.files && handlePhotoUpload(e.target.files[0])}
-                accept="image/*" 
-                className="hidden" 
-              />
-              {photoDataUrl ? (
-                <div className="flex items-center gap-3">
-                  <img src={photoDataUrl} alt="Aperçu" className="w-12 h-12 rounded-full object-cover border border-emerald-500/30" />
-                  <div className="text-left">
-                    <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Photo chargée avec succès</p>
-                    <button 
-                      type="button" 
-                      onClick={(e) => { e.stopPropagation(); setPhotoDataUrl(''); }}
-                      className="text-[10px] text-rose-500 font-semibold hover:underline mt-0.5"
-                    >
-                      Supprimer
-                    </button>
-                  </div>
-                </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans selection:bg-emerald-500 selection:text-white pb-16">
+      {/* Dynamic SEO / Sharing Look & Feel */}
+      <header className="sticky top-0 z-40 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center font-display font-black text-lg overflow-hidden shadow-sm">
+              {platformSettings.siteIconUrl ? (
+                <img src={platformSettings.siteIconUrl} alt="logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
-                <>
-                  <UploadCloud className="w-7 h-7 text-slate-400" />
-                  <p className="text-xs text-slate-500 font-medium">Glissez une photo ici, ou cliquez pour parcourir</p>
-                  <p className="text-[10px] text-slate-400">Format d'image standard (PNG, JPG)</p>
-                </>
+                <ShoppingBag className="w-5 h-5 text-emerald-600" />
               )}
             </div>
+            <span className="font-extrabold text-sm tracking-tight text-slate-900 dark:text-white font-display">
+              {platformSettings.siteName}
+            </span>
           </div>
 
-          {/* Pièces jointes (UPLOADER REEL) */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
-              <Paperclip className="w-3.5 h-3.5" /> Pièce jointe (ex: Copie CNI, Contrat) - Optionnel
-            </label>
-            <div 
-              onDragOver={(e) => { e.preventDefault(); setDragActiveFile(true); }}
-              onDragLeave={() => setDragActiveFile(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragActiveFile(false);
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  handleAttachmentUpload(e.dataTransfer.files[0]);
-                }
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1.5 ${
-                dragActiveFile 
-                  ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' 
-                  : 'border-slate-200 dark:border-slate-800 hover:border-emerald-500/50'
-              }`}
-            >
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                onChange={(e) => e.target.files && handleAttachmentUpload(e.target.files[0])}
-                className="hidden" 
-              />
-              <UploadCloud className="w-7 h-7 text-slate-400" />
-              <p className="text-xs text-slate-500 font-medium">Glissez un document ou cliquez pour parcourir</p>
-              <p className="text-[10px] text-slate-400">Taille max : 2 Mo. PDF, Word ou image</p>
+          <button 
+            onClick={handleOpenGeneralRegistration}
+            className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+          >
+            S'enregistrer
+          </button>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main className="max-w-6xl mx-auto px-4 mt-8 space-y-12">
+        {/* Showcase Banner */}
+        <div className="text-center space-y-4 max-w-2xl mx-auto">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider animate-pulse">
+            <Zap className="w-3.5 h-3.5" /> Distribution & Souscription de Kits
+          </span>
+          <h1 className="text-4xl md:text-5xl font-black font-display text-slate-900 dark:text-white tracking-tight leading-none">
+            Choisissez votre kit, payez au <span className="text-emerald-600">quotidien !</span>
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xl mx-auto">
+            Découvrez nos kits alimentaires de premier choix ou nos packs d'électroménager. Souscrivez en ligne via notre acompte journalier ultra-flexible pour simplifier votre quotidien.
+          </p>
+        </div>
+
+        {/* Categories Tab selector */}
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-slate-200/50 dark:border-slate-800/50 pb-5">
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              selectedCategory === 'all'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
+            }`}
+          >
+            Tous les kits
+          </button>
+          <button
+            onClick={() => setSelectedCategory('alimentaire')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              selectedCategory === 'alimentaire'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
+            }`}
+          >
+            Paniers Alimentaires
+          </button>
+          <button
+            onClick={() => setSelectedCategory('electromenager')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              selectedCategory === 'electromenager'
+                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
+            }`}
+          >
+            Électroménager & Confort
+          </button>
+        </div>
+
+        {/* Kits Bento Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <AnimatePresence mode="popLayout">
+            {filteredKits.map((kit, index) => (
+              <motion.div
+                key={kit.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2, delay: index * 0.05 }}
+                className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm overflow-hidden hover:shadow-md dark:hover:border-slate-700/60 transition-all group flex flex-col justify-between"
+              >
+                {/* Kit Image Header */}
+                <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
+                  <img 
+                    src={kit.images[0] || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80"} 
+                    alt={kit.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md rounded-lg text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider shadow-sm">
+                    {kit.categoryId === 'alimentaire' ? 'Alimentaire' : 'Électroménager'}
+                  </div>
+                </div>
+
+                {/* Kit Content */}
+                <div className="p-6 space-y-4 flex-grow flex flex-col justify-between">
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white tracking-tight">{kit.name}</h3>
+                    
+                    {/* Benefits badges */}
+                    <div className="flex flex-wrap gap-1">
+                      {kit.benefits.slice(0, 2).map((b, bi) => (
+                        <span key={bi} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] font-semibold">
+                          {b}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Products list overview */}
+                    <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                      <p className="font-bold text-slate-400 uppercase text-[9px] tracking-wider mb-1.5">Inclus dans le pack :</p>
+                      {kit.products.slice(0, 3).map((prod, pi) => (
+                        <div key={pi} className="flex items-center gap-1.5">
+                          <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                          <span className="truncate">{prod}</span>
+                        </div>
+                      ))}
+                      {kit.products.length > 3 && (
+                        <p className="text-[10px] italic text-emerald-600 font-semibold pl-5">Et {kit.products.length - 3} autres produits...</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Pricing / CTA */}
+                  <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4 mt-2 space-y-4">
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <span className="block text-[9px] uppercase font-bold text-slate-400">Acompte</span>
+                        <strong className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-display">{kit.dailyAmount}</strong>
+                        <span className="text-[10px] text-slate-400"> / jour</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="block text-[9px] uppercase font-bold text-slate-400 font-sans">Valeur Pack</span>
+                        <strong className="text-sm font-extrabold text-slate-850 dark:text-slate-200 font-display">{kit.totalValue}</strong>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setActiveKit(kit); }}
+                        className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                      >
+                        Détails
+                      </button>
+                      <button
+                        onClick={() => handleOpenSubscribe(kit)}
+                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1"
+                      >
+                        Choisir <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      </main>
+
+      {/* Kit Detail Bottom Sheet / Modal */}
+      {activeKit && !isSubscribeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
+          >
+            {/* Header image */}
+            <div className="relative aspect-[16/8] bg-slate-100 overflow-hidden flex-shrink-0">
+              <img src={activeKit.images[0]} alt={activeKit.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <button
+                onClick={() => setActiveKit(null)}
+                className="absolute top-4 right-4 p-2 bg-slate-950/50 hover:bg-slate-950/80 text-white rounded-full backdrop-blur-md cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Liste des pièces jointes */}
-            {attachments.length > 0 && (
-              <div className="mt-3 space-y-1.5">
-                {attachments.map(att => (
-                  <div key={att.id} className="p-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-slate-400" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{att.name}</span>
-                      <span className="text-[10px] text-slate-400">({(att.size / 1024).toFixed(0)} KB)</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setAttachments(prev => prev.filter(a => a.id !== att.id)); }}
-                      className="text-rose-500 hover:text-rose-600 font-bold"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
+            {/* Content area */}
+            <div className="p-6 overflow-y-auto space-y-5 text-sm flex-grow">
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white font-display tracking-tight">{activeKit.name}</h3>
+                <div className="flex gap-1.5">
+                  <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-lg text-[10px] font-bold">
+                    {activeKit.dailyAmount} / jour
+                  </span>
+                  <span className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-lg text-[10px] font-bold">
+                    Valeur : {activeKit.totalValue}
+                  </span>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Observations */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Commentaires / Demandes particulières (Optionnel)</label>
-            <textarea
-              value={observations}
-              onChange={(e) => setObservations(e.target.value)}
-              placeholder="Ex: Je souhaite m'inscrire à la tontine hebdomadaire de 5 000 F..."
-              rows={3}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white resize-none"
-            />
-          </div>
+              {/* Benefits list */}
+              <div className="space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Points forts du pack :</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {activeKit.benefits.map((b, bi) => (
+                    <div key={bi} className="flex items-center gap-2 text-slate-600 dark:text-slate-300 text-xs">
+                      <div className="w-4 h-4 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Check className="w-3 h-3" />
+                      </div>
+                      <span>{b}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-          <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/60 text-white font-bold rounded-xl shadow-lg cursor-pointer transition-all hover:shadow-emerald-500/10"
-            >
-              {loading ? "Transmission en cours..." : "S'enregistrer maintenant"}
-            </button>
-          </div>
-        </form>
-      </motion.div>
+              {/* Included products */}
+              <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Détail des articles inclus :</p>
+                <div className="space-y-2">
+                  {activeKit.products.map((p, pi) => (
+                    <div key={pi} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
+                      <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0">
+                        {pi + 1}
+                      </div>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{p}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Delivery info */}
+              <div className="p-4 bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <span className="block text-[10px] font-bold text-amber-600 uppercase tracking-wide">Modalités de livraison</span>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{activeKit.deliveryInfo}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer with checkout button */}
+            <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center gap-3 flex-shrink-0">
+              <button
+                onClick={() => setActiveKit(null)}
+                className="w-1/3 py-3 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Retour
+              </button>
+              <button
+                onClick={() => handleOpenSubscribe(activeKit)}
+                className="w-2/3 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+              >
+                Choisir et Souscrire <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Subscription Lead / CRM Self-Registration Form Modal */}
+      {(isSubscribeModalOpen || generalRegistrationMode) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl w-full max-w-xl my-8 overflow-hidden flex flex-col"
+          >
+            {/* Form Header */}
+            <div className="p-6 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-slate-900/40 flex justify-between items-center">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white font-display text-base">
+                  {activeKit ? `Souscription au pack ${activeKit.name}` : "Demande d'auto-inscription CRM"}
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Remplissez ce court formulaire pour soumettre vos informations.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsSubscribeModalOpen(false);
+                  setGeneralRegistrationMode(false);
+                }}
+                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form body */}
+            <form onSubmit={handleSubscribe} className="p-6 space-y-5 text-xs overflow-y-auto max-h-[70vh]">
+              {error && (
+                <div ref={errorRef} className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 font-semibold">
+                  {error}
+                </div>
+              )}
+
+              {/* Téléphone (Obligatoire) */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5" /> Numéro de téléphone <span className="text-rose-500">* obligatoire</span>
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Ex: 0749123456"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 focus:border-emerald-500 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white font-medium"
+                />
+              </div>
+
+              {/* Prénom & Nom de famille */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Prénom</label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Ex: Jean-Marc"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Nom de famille</label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Ex: Kouassi"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Commune & Quartier */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Commune</label>
+                  <select
+                    value={commune}
+                    onChange={(e) => setCommune(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                  >
+                    <option value="Cocody">Cocody</option>
+                    <option value="Yopougon">Yopougon</option>
+                    <option value="Abobo">Abobo</option>
+                    <option value="Marcory">Marcory</option>
+                    <option value="Plateau">Plateau</option>
+                    <option value="Treichville">Treichville</option>
+                    <option value="Koumassi">Koumassi</option>
+                    <option value="Adjamé">Adjamé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Quartier</label>
+                  <input
+                    type="text"
+                    value={quartier}
+                    onChange={(e) => setQuartier(e.target.value)}
+                    placeholder="Ex: Angré 7ème Tranche"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Adresse Géographique */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5" /> Adresse Géographique Détaillée
+                </label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Ex: Cité Verte, Villa 45, face à la pharmacie"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                />
+              </div>
+
+              {/* Photo de profil (UPLOADER REEL) */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
+                  <Camera className="w-3.5 h-3.5" /> Photo d'identité / Profil (Optionnel)
+                </label>
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragActivePhoto(true); }}
+                  onDragLeave={() => setDragActivePhoto(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragActivePhoto(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handlePhotoUpload(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => photoInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1.5 ${
+                    dragActivePhoto 
+                      ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' 
+                      : 'border-slate-200 dark:border-slate-800 hover:border-emerald-500/50'
+                  }`}
+                >
+                  <input 
+                    type="file" 
+                    ref={photoInputRef}
+                    onChange={(e) => e.target.files && handlePhotoUpload(e.target.files[0])}
+                    accept="image/*" 
+                    className="hidden" 
+                  />
+                  {photoDataUrl ? (
+                    <div className="flex items-center gap-3">
+                      <img src={photoDataUrl} alt="Aperçu" className="w-12 h-12 rounded-full object-cover border border-emerald-500/30" />
+                      <div className="text-left">
+                        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Photo chargée avec succès</p>
+                        <button 
+                          type="button" 
+                          onClick={(e) => { e.stopPropagation(); setPhotoDataUrl(''); }}
+                          className="text-[10px] text-rose-500 font-semibold hover:underline mt-0.5"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-6 h-6 text-slate-400" />
+                      <p className="text-xs text-slate-500 font-medium">Glissez ou cliquez pour charger votre photo</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Pièces jointes (UPLOADER REEL) */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1 flex items-center gap-1">
+                  <Paperclip className="w-3.5 h-3.5" /> Pièce jointe (ex: Copie CNI, Justificatif) - Optionnel
+                </label>
+                <div 
+                  onDragOver={(e) => { e.preventDefault(); setDragActiveFile(true); }}
+                  onDragLeave={() => setDragActiveFile(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragActiveFile(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleAttachmentUpload(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors flex flex-col items-center justify-center gap-1.5 ${
+                    dragActiveFile 
+                      ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20' 
+                      : 'border-slate-200 dark:border-slate-800 hover:border-emerald-500/50'
+                  }`}
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef}
+                    onChange={(e) => e.target.files && handleAttachmentUpload(e.target.files[0])}
+                    className="hidden" 
+                  />
+                  <UploadCloud className="w-6 h-6 text-slate-400" />
+                  <p className="text-xs text-slate-500 font-medium">Glissez un document ou cliquez pour parcourir</p>
+                </div>
+
+                {attachments.length > 0 && (
+                  <div className="mt-3 space-y-1.5">
+                    {attachments.map(att => (
+                      <div key={att.id} className="p-2 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-lg flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-slate-400" />
+                          <span className="font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{att.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setAttachments(prev => prev.filter(a => a.id !== att.id)); }}
+                          className="text-rose-500 hover:text-rose-600 font-bold"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Automatic CRM integration switch */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-2xl flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <span className="font-bold text-slate-800 dark:text-slate-200 block">Créer mon profil client</span>
+                  <p className="text-[10px] text-slate-400">Ajouter automatiquement mes coordonnées au CRM de l'entreprise pour accélérer le suivi.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoRegisterInCRM}
+                  onChange={(e) => setAutoRegisterInCRM(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              {/* Observations */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Commentaires ou Demandes particulières</label>
+                <textarea
+                  value={observations}
+                  onChange={(e) => setObservations(e.target.value)}
+                  placeholder="Ex: Je préfère être livré les samedis matin si possible..."
+                  rows={2}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSubscribeModalOpen(false);
+                    setGeneralRegistrationMode(false);
+                  }}
+                  className="px-5 py-2.5 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-600/60 text-white font-bold rounded-xl text-xs shadow-md transition-all"
+                >
+                  {loading ? "Transmission..." : "Confirmer ma Demande"}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };
