@@ -98,6 +98,15 @@ export const ClientRegistrationView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (error) {
+      setTimeout(() => {
+        errorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 50);
+    }
+  }, [error]);
 
   const handlePhotoUpload = async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -252,7 +261,7 @@ export const ClientRegistrationView: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5 text-sm">
           {error && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 text-xs font-semibold">
+            <div ref={errorRef} className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 text-xs font-semibold">
               {error}
             </div>
           )}
