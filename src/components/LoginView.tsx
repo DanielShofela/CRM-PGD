@@ -6,10 +6,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
-import { Phone, Lock, ShieldCheck, HelpCircle, Smartphone, Eye, EyeOff } from 'lucide-react';
+import { Phone, Lock, ShieldCheck, HelpCircle, Smartphone, Eye, EyeOff, Download } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
-  const { login, error, setError, seedData, loading, platformSettings } = useApp();
+  const { login, error, setError, seedData, loading, platformSettings, deferredPrompt, installApp } = useApp();
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -46,6 +46,28 @@ export const LoginView: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+      {/* Floating PWA Install button on Top Right */}
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          onClick={installApp}
+          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl border cursor-pointer transition-all ${
+            deferredPrompt 
+              ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 animate-pulse'
+              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm'
+          }`}
+          title="Installer l'application sur cet appareil"
+        >
+          <Download className="w-4 h-4" />
+          <span>Installer l'application</span>
+          {deferredPrompt && (
+            <span className="flex h-2 w-2 relative ml-1">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-100"></span>
+            </span>
+          )}
+        </button>
+      </div>
+
       {/* Background patterns */}
       <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-20">
         <div className="absolute top-12 left-12 w-96 h-96 bg-emerald-400 rounded-full filter blur-[120px]"></div>

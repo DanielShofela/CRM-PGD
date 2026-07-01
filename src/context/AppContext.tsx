@@ -100,6 +100,8 @@ interface AppContextType {
 
   platformSettings: { siteName: string; siteIconUrl: string };
   updatePlatformSettings: (settings: { siteName: string; siteIconUrl: string }) => Promise<void>;
+  deferredPrompt: any;
+  installApp: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -132,6 +134,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     siteName: 'Penta GAD Distribution',
     siteIconUrl: ''
   });
+
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  // Écouter l'événement d'installation de la PWA
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Empêcher l'affichage de la bannière par défaut du navigateur
+      e.preventDefault();
+      // Enregistrer l'événement pour pouvoir le déclencher plus tard
+      setDeferredPrompt(e);
+      console.log("PWA beforeinstallprompt capturé !");
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Écouter si l'application a déjà été installée
+    const handleAppInstalled = () => {
+      console.log("Application installée avec succès !");
+      setDeferredPrompt(null);
+    };
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const installApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log(`Réponse de l'utilisateur à l'installation: ${outcome}`);
+      setDeferredPrompt(null);
+    } else {
+      // Message d'aide si l'événement n'est pas disponible (ex: déjà installé, Safari, ou non supporté)
+      alert("Pour installer Penta CRM sur votre ordinateur ou votre téléphone :\n\n- Sur Chrome / Edge / Brave : Cliquez sur le bouton de téléchargement (icône d'écran avec flèche) à droite dans la barre d'adresse de votre navigateur.\n- Sur Safari (iPhone/iPad) : Appuyez sur le bouton 'Partager' (carré avec flèche vers le haut) puis sélectionnez 'Sur l'écran d'accueil'.\n- Sur Firefox : Firefox ne supporte plus l'installation directe sur PC, veuillez utiliser un navigateur basé sur Chromium (Chrome, Edge) pour une expérience optimale.");
+    }
+  };
 
   // Charger les paramètres globaux dès le chargement de l'application
   useEffect(() => {
@@ -769,7 +810,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationAsRead,
         markAllNotificationsAsRead,
         platformSettings,
-        updatePlatformSettings
+        updatePlatformSettings,
+        deferredPrompt,
+        installApp
       }}
     >
       {children}
