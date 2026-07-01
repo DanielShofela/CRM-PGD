@@ -7,6 +7,7 @@ import React, { useState, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
 import { ClientRepository, ActivityRepository, NotificationRepository } from '../repositories/database';
+import { useApp } from '../context/AppContext';
 import { motion } from 'motion/react';
 import { 
   Phone, 
@@ -76,6 +77,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export const ClientRegistrationView: React.FC = () => {
+  const { platformSettings } = useApp();
   // Champs
   const [phone, setPhone] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -204,7 +206,7 @@ export const ClientRegistrationView: React.FC = () => {
           <div className="space-y-2">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white font-display">Inscription Réussie !</h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm">
-              Vos coordonnées ont été transmises avec succès à l'équipe de **Penta GAD Distribution**.
+              Vos coordonnées ont été transmises avec succès à l'équipe de **{platformSettings.siteName}**.
             </p>
           </div>
 
@@ -239,11 +241,20 @@ export const ClientRegistrationView: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center py-10 px-4 font-sans">
       {/* Brand Header */}
-      <div className="text-center mb-8 space-y-1.5 max-w-md">
-        <div className="inline-flex p-3 bg-emerald-600 text-white rounded-2xl shadow-md mb-2">
-          <Sparkles className="w-6 h-6 animate-pulse" />
+      <div className="text-center mb-8 space-y-1.5 max-w-md flex flex-col items-center">
+        <div className="inline-flex p-3 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl mb-2 shadow-sm items-center justify-center">
+          {platformSettings.siteIconUrl ? (
+            <img 
+              src={platformSettings.siteIconUrl} 
+              alt="Logo" 
+              className="w-10 h-10 object-contain rounded-xl" 
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <Sparkles className="w-6 h-6 animate-pulse text-emerald-600" />
+          )}
         </div>
-        <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-white">Penta GAD Distribution</h1>
+        <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-white">{platformSettings.siteName}</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed uppercase tracking-wider font-semibold">
           Fiche d'auto-inscription client
         </p>
