@@ -30,6 +30,8 @@ import {
   SettingsRepository,
   seedPlatformData
 } from '../repositories/database';
+import { db } from '../lib/firebase';
+import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
 
 interface AppContextType {
   currentUser: User | null;
@@ -244,13 +246,192 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Charger les données dès qu'un utilisateur est connecté
+  // Charger les données en temps réel dès qu'un utilisateur est connecté ou que la base est mise à jour
   useEffect(() => {
-    if (currentUser) {
-      refreshData();
-    } else {
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const unsubscribers: (() => void)[] = [];
+
+    let activeListenersCount = 0;
+    const totalCriticalListeners = 9;
+
+    const checkLoadingComplete = () => {
+      activeListenersCount++;
+      if (activeListenersCount >= totalCriticalListeners) {
+        setLoading(false);
+      }
+    };
+
+    try {
+      // 1. Utilisateurs
+      const unsubUsers = onSnapshot(
+        query(collection(db, 'users'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          setUsers(snapshot.docs.map(doc => doc.data() as User));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Users:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubUsers);
+
+      // 2. Clients
+      const unsubClients = onSnapshot(
+        query(collection(db, 'clients'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          setClients(snapshot.docs.map(doc => doc.data() as Client));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Clients:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubClients);
+
+      // 3. Groupes de Tontine
+      const unsubGroups = onSnapshot(
+        query(collection(db, 'tontine_groups'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          setTontines(snapshot.docs.map(doc => doc.data() as TontineGroup));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Tontine Groups:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubGroups);
+
+      // 4. Cotisations de Tontine
+      const unsubContributions = onSnapshot(
+        query(collection(db, 'tontine_contributions'), orderBy('date', 'desc')),
+        (snapshot) => {
+          setContributions(snapshot.docs.map(doc => doc.data() as TontineContribution));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Contributions:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubContributions);
+
+      // 5. Kits Alimentaires
+      const unsubKits = onSnapshot(
+        collection(db, 'kits'),
+        (snapshot) => {
+          setKits(snapshot.docs.map(doc => doc.data() as KitPlan));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Kits:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubKits);
+
+      // 6. Livraisons
+      const unsubDeliveries = onSnapshot(
+        query(collection(db, 'deliveries'), orderBy('date', 'desc')),
+        (snapshot) => {
+          setDeliveries(snapshot.docs.map(doc => doc.data() as Delivery));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Deliveries:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubDeliveries);
+
+      // 7. Paiements
+      const unsubPayments = onSnapshot(
+        query(collection(db, 'payments'), orderBy('date', 'desc')),
+        (snapshot) => {
+          setPayments(snapshot.docs.map(doc => doc.data() as Payment));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Payments:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubPayments);
+
+      // 8. Notifications
+      const unsubNotifs = onSnapshot(
+        query(collection(db, 'notifications'), orderBy('createdAt', 'desc')),
+        (snapshot) => {
+          setNotifications(snapshot.docs.map(doc => doc.data() as Notification));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Notifications:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubNotifs);
+
+      // 9. Journal d'activités
+      const unsubLogs = onSnapshot(
+        query(collection(db, 'activity_logs'), orderBy('createdAt', 'desc'), limit(200)),
+        (snapshot) => {
+          setLogs(snapshot.docs.map(doc => doc.data() as ActivityLog));
+          checkLoadingComplete();
+        },
+        (err) => {
+          console.error("Erreur temps réel Logs:", err);
+          checkLoadingComplete();
+        }
+      );
+      unsubscribers.push(unsubLogs);
+
+      // 10. Rôles
+      const unsubRoles = onSnapshot(
+        collection(db, 'roles'),
+        (snapshot) => {
+          if (!snapshot.empty) {
+            setRoles(snapshot.docs.map(doc => doc.data() as Role));
+          }
+        },
+        (err) => console.error("Erreur temps réel Roles:", err)
+      );
+      unsubscribers.push(unsubRoles);
+
+      // 11. Modules
+      const unsubModules = onSnapshot(
+        collection(db, 'settings'),
+        (snapshot) => {
+          const fetchedModules: ModuleRegistry[] = [];
+          snapshot.forEach(doc => {
+            if (doc.id.startsWith('module_')) {
+              fetchedModules.push(doc.data() as ModuleRegistry);
+            }
+          });
+          if (fetchedModules.length > 0) {
+            setModules(fetchedModules);
+          }
+        },
+        (err) => console.error("Erreur temps réel Modules:", err)
+      );
+      unsubscribers.push(unsubModules);
+
+    } catch (err: any) {
+      console.error("Erreur lors de l'initialisation des écouteurs temps réel :", err);
+      setError("Erreur d'initialisation de la synchronisation en temps réel.");
       setLoading(false);
     }
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
   }, [currentUser]);
 
   const seedData = async () => {
