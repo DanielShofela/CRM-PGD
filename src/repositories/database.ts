@@ -169,6 +169,15 @@ export const ClientRepository = {
     return docSnap.exists() ? (docSnap.data() as Client) : null;
   },
 
+  async getByPhone(phone: string): Promise<Client | null> {
+    const q = query(collection(db, CLIENTS_COL), where('phone', '==', phone));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      return querySnapshot.docs[0].data() as Client;
+    }
+    return null;
+  },
+
   async getAll(): Promise<Client[]> {
     const q = query(collection(db, CLIENTS_COL), orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);

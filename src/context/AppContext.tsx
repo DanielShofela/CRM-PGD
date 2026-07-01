@@ -341,12 +341,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addClient = async (client: Omit<Client, 'id' | 'createdAt'>, author?: { id: string, name: string, phone: string }) => {
+    const existing = await ClientRepository.getByPhone(client.phone);
+    if (existing) {
+      throw new Error(`Ce numéro de téléphone (${client.phone}) est déjà associé à un autre client.`);
+    }
     const auth = author || (currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined);
     await ClientRepository.create(client, auth);
     await refreshData();
   };
 
   const updateClient = async (id: string, updates: Partial<Client>, author?: { id: string, name: string, phone: string }) => {
+    if (updates.phone) {
+      const existing = await ClientRepository.getByPhone(updates.phone);
+      if (existing && existing.id !== id) {
+        throw new Error(`Ce numéro de téléphone (${updates.phone}) est déjà utilisé par un autre client.`);
+      }
+    }
     const auth = author || (currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined);
     await ClientRepository.update(id, updates, auth);
     await refreshData();

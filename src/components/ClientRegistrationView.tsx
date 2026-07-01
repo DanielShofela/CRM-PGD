@@ -148,8 +148,16 @@ export const ClientRegistrationView: React.FC = () => {
     setLoading(true);
 
     try {
+      const cleanPhone = phone.trim();
+      const existingClient = await ClientRepository.getByPhone(cleanPhone);
+      if (existingClient) {
+        setError("Ce numéro de téléphone est déjà enregistré dans notre système.");
+        setLoading(false);
+        return;
+      }
+
       const payload: Omit<Client, 'id' | 'createdAt'> = {
-        phone: phone.trim(),
+        phone: cleanPhone,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         commune,
