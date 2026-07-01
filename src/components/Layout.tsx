@@ -17,9 +17,7 @@ import {
   Sun,
   Moon,
   Smartphone,
-  Check,
-  Download,
-  Monitor
+  Check
 } from 'lucide-react';
 
 // Dynamic Icon Component
@@ -46,9 +44,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     modules,
     notifications,
     markNotificationAsRead,
-    platformSettings,
-    deferredPrompt,
-    installApp
+    platformSettings
   } = useApp();
 
   const [notifMenuOpen, setNotifMenuOpen] = React.useState(false);
@@ -212,27 +208,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <div className="flex items-center gap-2.5 md:gap-4 ml-4">
-            {/* PWA Install Button */}
-            <button
-              id="pwa-install-header-btn"
-              onClick={installApp}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl border cursor-pointer transition-all ${
-                deferredPrompt 
-                  ? 'bg-emerald-600 border-emerald-500 text-white hover:bg-emerald-700 shadow-sm shadow-emerald-500/20 animate-pulse'
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-              title="Installer l'application CRM sur cet appareil"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Installer l'application</span>
-              {deferredPrompt && (
-                <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-100"></span>
-                </span>
-              )}
-            </button>
-
             {/* theme toggle quick access */}
             <button
               onClick={toggleTheme}

@@ -100,8 +100,6 @@ interface AppContextType {
 
   platformSettings: { siteName: string; siteIconUrl: string };
   updatePlatformSettings: (settings: { siteName: string; siteIconUrl: string }) => Promise<void>;
-  deferredPrompt: any;
-  installApp: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -135,45 +133,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     siteIconUrl: ''
   });
 
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
-  // Écouter l'événement d'installation de la PWA
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      // Empêcher l'affichage de la bannière par défaut du navigateur
-      e.preventDefault();
-      // Enregistrer l'événement pour pouvoir le déclencher plus tard
-      setDeferredPrompt(e);
-      console.log("PWA beforeinstallprompt capturé !");
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-
-    // Écouter si l'application a déjà été installée
-    const handleAppInstalled = () => {
-      console.log("Application installée avec succès !");
-      setDeferredPrompt(null);
-    };
-    window.addEventListener('appinstalled', handleAppInstalled);
-
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      window.removeEventListener('appinstalled', handleAppInstalled);
-    };
-  }, []);
-
-  const installApp = async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`Réponse de l'utilisateur à l'installation: ${outcome}`);
-      setDeferredPrompt(null);
-    } else {
-      // Message d'aide si l'événement n'est pas disponible (ex: déjà installé, Safari, ou non supporté)
-      alert("Pour installer Penta CRM sur votre ordinateur ou votre téléphone :\n\n- Sur Chrome / Edge / Brave : Cliquez sur le bouton de téléchargement (icône d'écran avec flèche) à droite dans la barre d'adresse de votre navigateur.\n- Sur Safari (iPhone/iPad) : Appuyez sur le bouton 'Partager' (carré avec flèche vers le haut) puis sélectionnez 'Sur l'écran d'accueil'.\n- Sur Firefox : Firefox ne supporte plus l'installation directe sur PC, veuillez utiliser un navigateur basé sur Chromium (Chrome, Edge) pour une expérience optimale.");
-    }
-  };
-
   // Charger les paramètres globaux dès le chargement de l'application
   useEffect(() => {
     const loadGlobalSettings = async () => {
@@ -190,81 +149,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadGlobalSettings();
   }, []);
 
-  // Mettre à jour le titre du document, le favicon, l'icône apple-touch et le manifeste avec le logo personnalisé
+  // Mettre à jour le titre du document et le favicon
   useEffect(() => {
     document.title = platformSettings.siteName;
-    const iconUrl = platformSettings.siteIconUrl || '/icon.svg';
-
-    // Mettre à jour ou créer le favicon principal
-    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
-    if (!link) {
-      link = document.createElement('link');
-      link.rel = 'icon';
-      document.getElementsByTagName('head')[0].appendChild(link);
+    if (platformSettings.siteIconUrl) {
+      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = platformSettings.siteIconUrl;
     }
-    link.href = iconUrl;
-
-    // Mettre à jour ou créer l'icône Apple Touch
-    let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
-    if (!appleLink) {
-      appleLink = document.createElement('link');
-      appleLink.rel = 'apple-touch-icon';
-      document.getElementsByTagName('head')[0].appendChild(appleLink);
-    }
-    appleLink.href = iconUrl;
-
-    // Créer ou mettre à jour dynamiquement le manifest.json avec le logo personnalisé
-    let manifestLink: HTMLLinkElement | null = document.querySelector("link[rel='manifest']");
-    
-    // Déterminer le type MIME correct pour l'icône
-    let iconType = 'image/svg+xml';
-    if (iconUrl.startsWith('data:image/png')) {
-      iconType = 'image/png';
-    } else if (iconUrl.startsWith('data:image/jpeg') || iconUrl.startsWith('data:image/jpg')) {
-      iconType = 'image/jpeg';
-    } else if (iconUrl.startsWith('data:image/webp')) {
-      iconType = 'image/webp';
-    }
-
-    const manifestObj = {
-      "short_name": platformSettings.siteName.split(' ')[0] || "Penta CRM",
-      "name": platformSettings.siteName || "Penta CRM - GAD Distribution",
-      "description": `Plateforme SaaS ERP & CRM de gestion pour ${platformSettings.siteName}`,
-      "icons": [
-        {
-          "src": iconUrl,
-          "sizes": "192x192 512x512",
-          "type": iconType,
-          "purpose": "any"
-        },
-        {
-          "src": iconUrl,
-          "sizes": "192x192 512x512",
-          "type": iconType,
-          "purpose": "maskable"
-        }
-      ],
-      "start_url": "/",
-      "background_color": "#f8fafc",
-      "theme_color": "#059669",
-      "display": "standalone",
-      "orientation": "any"
-    };
-
-    const manifestStr = JSON.stringify(manifestObj);
-    const blob = new Blob([manifestStr], { type: 'application/json' });
-    const manifestDataUrl = URL.createObjectURL(blob);
-
-    if (!manifestLink) {
-      manifestLink = document.createElement('link');
-      manifestLink.rel = 'manifest';
-      document.getElementsByTagName('head')[0].appendChild(manifestLink);
-    }
-    manifestLink.href = manifestDataUrl;
-
-    return () => {
-      URL.revokeObjectURL(manifestDataUrl);
-    };
   }, [platformSettings]);
 
   // Charger le thème depuis localStorage
@@ -810,9 +706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         markNotificationAsRead,
         markAllNotificationsAsRead,
         platformSettings,
-        updatePlatformSettings,
-        deferredPrompt,
-        installApp
+        updatePlatformSettings
       }}
     >
       {children}
