@@ -18,7 +18,8 @@ import {
   Check,
   Smartphone,
   Sparkles,
-  Info
+  Info,
+  Globe
 } from 'lucide-react';
 import { SettingsRepository } from '../repositories/database';
 
@@ -34,10 +35,12 @@ export const SettingsView: React.FC = () => {
     theme,
     toggleTheme,
     seedData,
-    loading
+    loading,
+    platformSettings,
+    updatePlatformSettings
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'roles' | 'modules' | 'theme'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'roles' | 'modules' | 'theme' | 'platform_config'>('profile');
 
   // Profil Form
   const [dispName, setDispName] = useState(currentUser?.displayName || '');
@@ -55,6 +58,20 @@ export const SettingsView: React.FC = () => {
   const [modIcon, setModIcon] = useState('LineChart');
   const [modRoles, setModRoles] = useState<string[]>(['super_admin', 'admin']);
   const [modDesc, setModDesc] = useState('');
+
+  // Config Plateforme (Site branding)
+  const [siteName, setSiteName] = useState(platformSettings?.siteName || 'Penta GAD Distribution');
+  const [siteIconUrl, setSiteIconUrl] = useState(platformSettings?.siteIconUrl || '');
+  const [dragActive, setDragActive] = useState(false);
+
+  React.useEffect(() => {
+    if (platformSettings) {
+      setSiteName(platformSettings.siteName);
+      setSiteIconUrl(platformSettings.siteIconUrl);
+    }
+  }, [platformSettings]);
+
+  const isAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,6 +146,105 @@ export const SettingsView: React.FC = () => {
     }
   };
 
+  const handleUpdatePlatform = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await updatePlatformSettings({ siteName, siteIconUrl });
+      alert("Paramètres de la plateforme mis à jour avec succès !");
+    } catch (err: any) {
+      alert("Erreur de mise à jour des paramètres : " + err.message);
+    }
+  };
+
+  const compressImage = (base64Str: string, maxWidth = 256, maxHeight = 256): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(base64Str);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compressed JPEG is extremely small, typically 5KB to 20KB
+        const compressed = canvas.toDataURL('image/jpeg', 0.75);
+        resolve(compressed);
+      };
+      img.onerror = () => {
+        resolve(base64Str);
+      };
+    });
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result as string;
+      try {
+        const compressed = await compressImage(base64);
+        setSiteIconUrl(compressed);
+      } catch (err) {
+        setSiteIconUrl(base64);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        try {
+          const compressed = await compressImage(base64);
+          setSiteIconUrl(compressed);
+        } catch (err) {
+          setSiteIconUrl(base64);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleReSeed = async () => {
     if (window.confirm("Voulez-vous ré-initialiser toutes les données de la base de données Firestore ? Cette action est irréversible.")) {
       await seedData();
@@ -180,6 +296,18 @@ export const SettingsView: React.FC = () => {
         >
           <Sun className="w-4 h-4" /> Thème & Base
         </button>
+        {isAdmin && (
+          <button
+            onClick={() => setActiveTab('platform_config')}
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl font-semibold text-left transition-colors cursor-pointer ${
+              activeTab === 'platform_config'
+                ? 'bg-emerald-600 text-white'
+                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Globe className="w-4 h-4" /> Configuration du site
+          </button>
+        )}
       </div>
 
       {/* 2. Contenu principal de l'onglet actif */}
@@ -471,6 +599,104 @@ export const SettingsView: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ONGLET 5 : CONFIGURATION GLOBALE DE LA PLATEFORME */}
+        {activeTab === 'platform_config' && isAdmin && (
+          <div className="space-y-6 max-w-lg">
+            <div>
+              <h2 className="text-lg font-bold font-display text-slate-900 dark:text-white">Configuration du site</h2>
+              <p className="text-slate-500 mt-0.5">Gérez l'identité de marque, le nom de l'application et l'icône / logo global.</p>
+            </div>
+
+            <form onSubmit={handleUpdatePlatform} className="space-y-6">
+              {/* Site Name Input */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1.5">
+                  Nom du site / Titre de l'onglet *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={siteName}
+                  onChange={(e) => setSiteName(e.target.value)}
+                  placeholder="ex: PENTA GAD Distribution"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-semibold text-xs"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Ce nom apparaîtra en haut du navigateur, dans la barre de recherche et comme logo texte du site.
+                </p>
+              </div>
+
+              {/* Site Icon Upload (Drag and Drop Area) */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-2">
+                  Icône du site / Logo (Image carrée recommandée)
+                </label>
+
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  {/* Preview box */}
+                  <div className="w-20 h-20 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden relative group">
+                    {siteIconUrl ? (
+                      <>
+                        <img 
+                          src={siteIconUrl} 
+                          alt="Logo Preview" 
+                          className="w-full h-full object-contain p-2" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setSiteIconUrl('')}
+                          className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity cursor-pointer"
+                        >
+                          Supprimer
+                        </button>
+                      </>
+                    ) : (
+                      <Smartphone className="w-8 h-8 text-slate-300 dark:text-slate-700" />
+                    )}
+                  </div>
+
+                  {/* Drag and Drop Zone */}
+                  <div
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                    className={`flex-1 w-full h-24 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center px-4 transition-all relative ${
+                      dragActive
+                        ? 'border-emerald-500 bg-emerald-500/5'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 hover:bg-slate-100 dark:hover:bg-slate-950/40'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      id="logo-upload"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                    />
+                    <p className="text-slate-500 font-medium text-center text-[10px]">
+                      Déposez votre fichier image ici ou <span className="text-emerald-600 font-bold underline">cliquez pour parcourir</span>
+                    </p>
+                    <p className="text-slate-400 text-[9px] mt-1">
+                      Format PNG, JPG, WEBP ou SVG (Max. 500 Ko)
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md transition-colors cursor-pointer"
+                >
+                  Enregistrer les modifications
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </div>

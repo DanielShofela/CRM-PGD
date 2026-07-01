@@ -43,7 +43,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     logout,
     modules,
     notifications,
-    markNotificationAsRead
+    markNotificationAsRead,
+    platformSettings
   } = useApp();
 
   const [notifMenuOpen, setNotifMenuOpen] = React.useState(false);
@@ -71,20 +72,38 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="flex items-center gap-2.5"
+                className="flex items-center gap-2.5 min-w-0"
               >
-                <div className="p-1.5 bg-emerald-600 text-white rounded-xl">
-                  <Smartphone className="w-5 h-5" />
+                <div className="p-1.5 bg-emerald-600 text-white rounded-xl shrink-0 w-8 h-8 flex items-center justify-center">
+                  {platformSettings.siteIconUrl ? (
+                    <img 
+                      src={platformSettings.siteIconUrl} 
+                      alt="Logo" 
+                      className="w-5 h-5 object-contain rounded" 
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <Smartphone className="w-5 h-5" />
+                  )}
                 </div>
-                <span className="font-extrabold font-display text-slate-900 dark:text-white tracking-tight text-sm">
-                  PENTA GAD
+                <span className="font-extrabold font-display text-slate-900 dark:text-white tracking-tight text-sm truncate max-w-[110px] uppercase">
+                  {platformSettings.siteName}
                 </span>
               </motion.div>
             )}
 
             {sidebarCollapsed && (
-              <div className="p-1.5 bg-emerald-600 text-white rounded-xl mx-auto">
-                <Smartphone className="w-5 h-5" />
+              <div className="p-1.5 bg-emerald-600 text-white rounded-xl mx-auto w-8 h-8 flex items-center justify-center">
+                {platformSettings.siteIconUrl ? (
+                  <img 
+                    src={platformSettings.siteIconUrl} 
+                    alt="Logo" 
+                    className="w-5 h-5 object-contain rounded" 
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <Smartphone className="w-5 h-5" />
+                )}
               </div>
             )}
 

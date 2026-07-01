@@ -130,3 +130,10 @@ export interface ModuleRegistry {
   future?: boolean; // Indique un module futur planifié
   description?: string;
 }
+
+export interface PlatformSettings {
+  id: string; // 'global_config'
+  siteName: string;
+  siteIconUrl: string;
+}
+

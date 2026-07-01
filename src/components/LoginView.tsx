@@ -9,7 +9,7 @@ import { motion } from 'motion/react';
 import { Phone, Lock, ShieldCheck, HelpCircle, Smartphone, Eye, EyeOff } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
-  const { login, error, setError, seedData, loading } = useApp();
+  const { login, error, setError, seedData, loading, platformSettings } = useApp();
 
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -58,11 +58,20 @@ export const LoginView: React.FC = () => {
         className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200/60 dark:border-slate-800/80 p-8 relative z-10"
       >
         <div className="text-center mb-8">
-          <div className="inline-flex p-3.5 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl mb-4 shadow-sm">
-            <Smartphone className="w-8 h-8" />
+          <div className="inline-flex p-3.5 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl mb-4 shadow-sm items-center justify-center">
+            {platformSettings.siteIconUrl ? (
+              <img 
+                src={platformSettings.siteIconUrl} 
+                alt="Logo" 
+                className="w-10 h-10 object-contain rounded-xl" 
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <Smartphone className="w-8 h-8" />
+            )}
           </div>
           <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-white tracking-tight">
-            PENTA GAD Distribution
+            {platformSettings.siteName}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-sm mt-1.5">
             Portail CRM & ERP Intégré

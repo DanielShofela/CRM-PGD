@@ -29,7 +29,8 @@ import {
   Notification,
   ActivityLog,
   Role,
-  ModuleRegistry
+  ModuleRegistry,
+  PlatformSettings
 } from '../types';
 import { hashPassword } from '../utils/crypto';
 
@@ -376,7 +377,7 @@ export const NotificationRepository = {
       title,
       message,
       type,
-      userId,
+      ...(userId !== undefined ? { userId } : {}),
       read: false,
       createdAt: new Date().toISOString()
     };
@@ -474,6 +475,26 @@ export const SettingsRepository = {
 
   async saveModule(module: ModuleRegistry): Promise<void> {
     await setDoc(doc(db, SETTINGS_COL, `module_${module.id}`), module);
+  },
+
+  async getGlobalSettings(): Promise<PlatformSettings> {
+    const docRef = doc(db, SETTINGS_COL, 'global_config');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return docSnap.data() as PlatformSettings;
+    }
+    return {
+      id: 'global_config',
+      siteName: 'Penta GAD Distribution',
+      siteIconUrl: ''
+    };
+  },
+
+  async saveGlobalSettings(settings: Omit<PlatformSettings, 'id'>): Promise<void> {
+    await setDoc(doc(db, SETTINGS_COL, 'global_config'), {
+      id: 'global_config',
+      ...settings
+    });
   }
 };
 

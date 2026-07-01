@@ -15,7 +15,8 @@ import {
   Notification,
   ActivityLog,
   Role,
-  ModuleRegistry
+  ModuleRegistry,
+  PlatformSettings
 } from '../types';
 import {
   UserRepository,
@@ -94,6 +95,9 @@ interface AppContextType {
   sendNotification: (title: string, message: string, type: Notification['type']) => Promise<void>;
   markNotificationAsRead: (id: string) => Promise<void>;
   markAllNotificationsAsRead: () => Promise<void>;
+
+  platformSettings: { siteName: string; siteIconUrl: string };
+  updatePlatformSettings: (settings: { siteName: string; siteIconUrl: string }) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -121,6 +125,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [platformSettings, setPlatformSettings] = useState<{ siteName: string; siteIconUrl: string }>({
+    siteName: 'Penta GAD Distribution',
+    siteIconUrl: ''
+  });
+
+  // Charger les paramètres globaux dès le chargement de l'application
+  useEffect(() => {
+    const loadGlobalSettings = async () => {
+      try {
+        const settings = await SettingsRepository.getGlobalSettings();
+        setPlatformSettings({
+          siteName: settings.siteName,
+          siteIconUrl: settings.siteIconUrl
+        });
+      } catch (err) {
+        console.error("Erreur de chargement des paramètres globaux :", err);
+      }
+    };
+    loadGlobalSettings();
+  }, []);
+
+  // Mettre à jour le titre du document et le favicon
+  useEffect(() => {
+    document.title = platformSettings.siteName;
+    if (platformSettings.siteIconUrl) {
+      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = platformSettings.siteIconUrl;
+    }
+  }, [platformSettings]);
 
   // Charger le thème depuis localStorage
   useEffect(() => {
@@ -404,6 +443,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshData();
   };
 
+  const updatePlatformSettings = async (settings: { siteName: string; siteIconUrl: string }) => {
+    try {
+      await SettingsRepository.saveGlobalSettings(settings);
+      setPlatformSettings(settings);
+      if (currentUser) {
+        await ActivityRepository.log(
+          currentUser.id,
+          currentUser.phone,
+          currentUser.displayName,
+          'update',
+          `Modification des paramètres globaux : Nom "${settings.siteName}"`
+        );
+      }
+    } catch (err: any) {
+      console.error("Erreur de mise à jour des paramètres :", err);
+      throw err;
+    }
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -455,7 +513,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         saveModule,
         sendNotification,
         markNotificationAsRead,
-        markAllNotificationsAsRead
+        markAllNotificationsAsRead,
+        platformSettings,
+        updatePlatformSettings
       }}
     >
       {children}
