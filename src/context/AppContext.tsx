@@ -149,18 +149,81 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     loadGlobalSettings();
   }, []);
 
-  // Mettre à jour le titre du document et le favicon
+  // Mettre à jour le titre du document, le favicon, l'icône apple-touch et le manifeste avec le logo personnalisé
   useEffect(() => {
     document.title = platformSettings.siteName;
-    if (platformSettings.siteIconUrl) {
-      let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
-      link.href = platformSettings.siteIconUrl;
+    const iconUrl = platformSettings.siteIconUrl || '/icon.svg';
+
+    // Mettre à jour ou créer le favicon principal
+    let link: HTMLLinkElement | null = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.getElementsByTagName('head')[0].appendChild(link);
     }
+    link.href = iconUrl;
+
+    // Mettre à jour ou créer l'icône Apple Touch
+    let appleLink: HTMLLinkElement | null = document.querySelector("link[rel='apple-touch-icon']");
+    if (!appleLink) {
+      appleLink = document.createElement('link');
+      appleLink.rel = 'apple-touch-icon';
+      document.getElementsByTagName('head')[0].appendChild(appleLink);
+    }
+    appleLink.href = iconUrl;
+
+    // Créer ou mettre à jour dynamiquement le manifest.json avec le logo personnalisé
+    let manifestLink: HTMLLinkElement | null = document.querySelector("link[rel='manifest']");
+    
+    // Déterminer le type MIME correct pour l'icône
+    let iconType = 'image/svg+xml';
+    if (iconUrl.startsWith('data:image/png')) {
+      iconType = 'image/png';
+    } else if (iconUrl.startsWith('data:image/jpeg') || iconUrl.startsWith('data:image/jpg')) {
+      iconType = 'image/jpeg';
+    } else if (iconUrl.startsWith('data:image/webp')) {
+      iconType = 'image/webp';
+    }
+
+    const manifestObj = {
+      "short_name": platformSettings.siteName.split(' ')[0] || "Penta CRM",
+      "name": platformSettings.siteName || "Penta CRM - GAD Distribution",
+      "description": `Plateforme SaaS ERP & CRM de gestion pour ${platformSettings.siteName}`,
+      "icons": [
+        {
+          "src": iconUrl,
+          "sizes": "192x192 512x512",
+          "type": iconType,
+          "purpose": "any"
+        },
+        {
+          "src": iconUrl,
+          "sizes": "192x192 512x512",
+          "type": iconType,
+          "purpose": "maskable"
+        }
+      ],
+      "start_url": "/",
+      "background_color": "#f8fafc",
+      "theme_color": "#059669",
+      "display": "standalone",
+      "orientation": "any"
+    };
+
+    const manifestStr = JSON.stringify(manifestObj);
+    const blob = new Blob([manifestStr], { type: 'application/json' });
+    const manifestDataUrl = URL.createObjectURL(blob);
+
+    if (!manifestLink) {
+      manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      document.getElementsByTagName('head')[0].appendChild(manifestLink);
+    }
+    manifestLink.href = manifestDataUrl;
+
+    return () => {
+      URL.revokeObjectURL(manifestDataUrl);
+    };
   }, [platformSettings]);
 
   // Charger le thème depuis localStorage
