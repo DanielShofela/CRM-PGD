@@ -263,7 +263,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
 
             {/* Bottom Glassmorphic Card Info (ONLY for products, NOT for main kit image) */}
             {slide.isProduct && (
-              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-none p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
+              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
                 <div className="min-w-0 flex-grow">
                   <p className="text-[10px] font-black text-white truncate leading-tight tracking-tight">
                     {slide.title}
@@ -275,7 +275,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
                   )}
                 </div>
                 <div className="flex-shrink-0">
-                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-1 rounded-none shadow-sm">
+                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm">
                     Qté: {slide.quantity}
                   </span>
                 </div>
@@ -287,7 +287,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
 
       {/* Instagram-like index counter */}
       {slides.length > 1 && (
-        <div className="absolute top-3 right-3 px-2 py-0.5 bg-slate-950/60 backdrop-blur-sm rounded-none text-[9px] font-extrabold text-white">
+        <div className="absolute top-3 right-3 px-2 py-0.5 bg-slate-950/60 backdrop-blur-sm rounded-full text-[9px] font-extrabold text-white">
           {activeIndex + 1}/{slides.length}
         </div>
       )}
@@ -298,14 +298,14 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); prevSlide(); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-none shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); nextSlide(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-none shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -320,7 +320,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
               key={i}
               type="button"
               onClick={(e) => { e.stopPropagation(); scrollToSlide(i); }}
-              className={`w-1.5 h-1.5 rounded-none pointer-events-auto transition-all ${
+              className={`w-1.5 h-1.5 rounded-full pointer-events-auto transition-all ${
                 i === activeIndex 
                   ? 'bg-emerald-500 w-3' 
                   : 'bg-white/50 hover:bg-white/80'
