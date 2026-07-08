@@ -244,7 +244,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
   };
 
   return (
-    <div className="relative w-[287px] h-[210px] mx-auto rounded-3xl overflow-hidden shadow-lg border border-slate-150 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-950 flex-shrink-0 group mt-4">
+    <div className="relative w-[287px] h-[210px] mx-auto rounded-3xl overflow-hidden shadow-lg bg-slate-100 dark:bg-slate-950 flex-shrink-0 group mt-4">
       {/* Scrollable track */}
       <div
         ref={containerRef}
@@ -260,11 +260,6 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
               className="w-full h-full object-contain pointer-events-none"
               referrerPolicy="no-referrer"
             />
-
-            {/* Top Badge (Main / Category) */}
-            <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md rounded-xl text-[8px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider shadow-sm">
-              {slide.isProduct ? 'Composant' : (kit.categoryId === 'alimentaire' ? 'Panier Alimentaire' : 'Électroménager')}
-            </div>
 
             {/* Bottom Glassmorphic Card Info */}
             <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
@@ -491,9 +486,7 @@ export const ClientRegistrationView: React.FC = () => {
     setGeneralRegistrationMode(true);
   };
 
-  const filteredKits = selectedCategory === 'all' 
-    ? kitsToDisplay 
-    : kitsToDisplay.filter(k => k.categoryId === selectedCategory);
+  const filteredKits = kitsToDisplay;
 
   if (success) {
     return (
@@ -608,40 +601,6 @@ export const ClientRegistrationView: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-xl mx-auto">
             Découvrez nos kits alimentaires de premier choix ou nos packs d'électroménager. Souscrivez en ligne via notre acompte journalier ultra-flexible pour simplifier votre quotidien.
           </p>
-        </div>
-
-        {/* Categories Tab selector */}
-        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-slate-200/50 dark:border-slate-800/50 pb-5">
-          <button
-            onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedCategory === 'all'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
-            }`}
-          >
-            Tous les kits
-          </button>
-          <button
-            onClick={() => setSelectedCategory('alimentaire')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedCategory === 'alimentaire'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
-            }`}
-          >
-            Paniers Alimentaires
-          </button>
-          <button
-            onClick={() => setSelectedCategory('electromenager')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              selectedCategory === 'electromenager'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-500/10'
-                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-800/60 hover:bg-slate-50'
-            }`}
-          >
-            Électroménager & Confort
-          </button>
         </div>
 
         {/* Kits Bento Grid */}
@@ -799,19 +758,30 @@ export const ClientRegistrationView: React.FC = () => {
                     activeKit.products.forEach(p => {
                       counts[p] = (counts[p] || 0) + 1;
                     });
-                    return Object.entries(counts).map(([prodName, qty], pi) => (
-                      <div key={pi} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800/50 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0">
-                            {pi + 1}
+                    return Object.entries(counts).map(([prodName, qty], pi) => {
+                      const matchedProduct = products.find(p => p.name.trim().toLowerCase() === prodName.trim().toLowerCase());
+                      const productImg = matchedProduct?.image || (activeKit.categoryId === 'alimentaire' 
+                        ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=150&q=80" 
+                        : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150&q=80");
+                      return (
+                        <div key={pi} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800/50 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
+                              <img 
+                                src={productImg} 
+                                alt={prodName} 
+                                className="w-full h-full object-cover" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            </div>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{prodName}</span>
                           </div>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{prodName}</span>
+                          <span className="px-2.5 py-1 bg-slate-200/60 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-black">
+                            Qté: {qty}
+                          </span>
                         </div>
-                        <span className="px-2.5 py-1 bg-slate-200/60 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-black">
-                          Qté: {qty}
-                        </span>
-                      </div>
-                    ));
+                      );
+                    });
                   })()}
                 </div>
               </div>
