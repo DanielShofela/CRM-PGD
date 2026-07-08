@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ShoppingBag,
   Plus,
+  Minus,
   DollarSign,
   Calendar,
   CheckCircle,
@@ -27,9 +28,79 @@ import {
   Edit2,
   Check,
   ArrowRight,
-  Bookmark
+  Bookmark,
+  UploadCloud,
+  Search
 } from 'lucide-react';
 import { KitPlan, Product, Kit, Subscription, Client } from '../types';
+
+// Image Compression Helper
+function compressImage(file: File, maxWidth = 500, maxHeight = 500, quality = 0.75): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            width = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
+// Helper to calculate remaining days to December 15th
+function getRemainingDaysToDecember15(): number {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const startDate = new Date(currentYear, 5, 15); // June 15 (month index 5)
+  const endDate = new Date(currentYear, 11, 15);  // December 15 (month index 11)
+
+  // Clear time components for pure day comparison
+  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  // If today is on or before June 15th, count the entire 183 campaign days
+  if (todayMidnight.getTime() <= startDate.getTime()) {
+    return 183;
+  }
+
+  // If today is past December 15th, default to 1 day to prevent divide-by-zero
+  if (todayMidnight.getTime() >= endDate.getTime()) {
+    return 1;
+  }
+
+  // Otherwise calculate remaining days
+  const diffTime = endDate.getTime() - todayMidnight.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays > 0 ? diffDays : 1;
+}
 
 export const KitsView: React.FC = () => {
   const {
@@ -38,6 +109,7 @@ export const KitsView: React.FC = () => {
     products,
     kitDefinitions,
     subscriptions,
+    categories,
     addKitPlan,
     updateKitPlan,
     addPayment,
@@ -47,6 +119,9 @@ export const KitsView: React.FC = () => {
     addKitDefinition,
     updateKitDefinition,
     deleteKitDefinition,
+    addCategory,
+    updateCategory,
+    deleteCategory,
     addSubscription,
     updateSubscriptionStatus,
     deleteSubscription,
@@ -55,18 +130,20 @@ export const KitsView: React.FC = () => {
   } = useApp();
 
   // Navigation tabs for CRM Panel
-  const [activeTab, setActiveTab] = useState<'plans' | 'leads' | 'catalog' | 'products'>('plans');
+  const [activeTab, setActiveTab] = useState<'plans' | 'leads' | 'categories' | 'kits' | 'catalogue' | 'personnaliser'>('categories');
 
   // Modals visibility
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isKitDefModalOpen, setIsKitDefModalOpen] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
 
   // Active items states
   const [selectedPlan, setSelectedPlan] = useState<KitPlan | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [selectedKitDef, setSelectedKitDef] = useState<Kit | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
 
   // Forms state
   // 1. Client Kit Plan Registration form
@@ -82,19 +159,45 @@ export const KitsView: React.FC = () => {
 
   // 3. Product creation form
   const [prodName, setProdName] = useState('');
-  const [prodCategory, setProdCategory] = useState('alimentaire');
+  const [prodCategory, setProdCategory] = useState('Produits alimentaires'); // Default as 'Produits alimentaires'
   const [prodSubcategory, setProdSubcategory] = useState('');
   const [prodImage, setProdImage] = useState('');
+  const [prodIsDragging, setProdIsDragging] = useState(false);
+  const [prodUploadError, setProdUploadError] = useState('');
+  const prodFileInputRef = useRef<HTMLInputElement>(null);
 
   // 4. Kit definition form
   const [kitDefName, setKitDefName] = useState('');
-  const [kitDefCategory, setKitDefCategory] = useState('alimentaire');
+  const [kitDefCategory, setKitDefCategory] = useState('');
   const [kitDefDaily, setKitDefDaily] = useState('150 FCFA');
   const [kitDefTotal, setKitDefTotal] = useState('25 000 FCFA');
   const [kitDefBenefits, setKitDefBenefits] = useState('');
   const [kitDefDelivery, setKitDefDelivery] = useState('Livraison en commune sous 48h.');
   const [kitDefSelectedProducts, setKitDefSelectedProducts] = useState<string[]>([]);
   const [kitDefImage, setKitDefImage] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 5. Category creation form
+  const [catName, setCatName] = useState('');
+  const [catDailyAmount, setCatDailyAmount] = useState('100 FCFA / jour');
+  const [catImage, setCatImage] = useState('');
+  const [catIsDragging, setCatIsDragging] = useState(false);
+  const [catUploadError, setCatUploadError] = useState('');
+  const catFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Custom addition states for Kit creation
+  const [manualProductName, setManualProductName] = useState('');
+  const [manualBenefitText, setManualBenefitText] = useState('');
+  const [kitProductSearch, setKitProductSearch] = useState('');
+
+  // Filter kits under "Gérer Kits"
+  const [selectedKitCategoryFilter, setSelectedKitCategoryFilter] = useState<string>('all');
+
+  // Filter catalogue under "Catalogue"
+  const [selectedCatalogueCategoryFilter, setSelectedCatalogueCategoryFilter] = useState<string>('all');
+  const [productSearchQuery, setProductSearchQuery] = useState('');
 
   // Local helper for fallback/static kits if database is not seeded
   const fallbackKits = [
@@ -113,40 +216,177 @@ export const KitsView: React.FC = () => {
 
   // Seeds default kits into database for user if they want to
   const handleSeedDefaultCatalog = async () => {
-    if (window.confirm("Voulez-vous pré-charger des kits et produits de démonstration dans Firestore ?")) {
+    if (window.confirm("Voulez-vous réinitialiser et charger les 4 Catégories, les 53 Produits et les 4 Kits de démonstration dans Firestore ?")) {
       try {
-        // Create 4 products first
-        const p1 = await addProduct({ name: 'Riz parfumé de luxe (Sac de 25kg)', category: 'alimentaire', subcategory: 'Riz', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150' });
-        const p2 = await addProduct({ name: 'Huile végétale raffinée (Bidon de 5L)', category: 'alimentaire', subcategory: 'Huiles', image: 'https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=150' });
-        const p3 = await addProduct({ name: 'Cuiseur de riz automatique 1.8L', category: 'electromenager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' });
-        const p4 = await addProduct({ name: 'Ventilateur rechargeable sur pied', category: 'electromenager', subcategory: 'Confort', image: 'https://images.unsplash.com/photo-1622737133809-d95047b9e673?w=150' });
+        // 1. Seed Categories
+        const seedCategories = [
+          { name: 'Gamme Bronze', minDailyAmount: '100 FCFA / jour', imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=400' },
+          { name: 'Gamme Silver', minDailyAmount: '150 FCFA / jour', imageUrl: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400' },
+          { name: 'Gamme Gold', minDailyAmount: '200 FCFA / jour', imageUrl: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=400' },
+          { name: 'Gamme Platinum', minDailyAmount: '450 FCFA / jour', imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=400' }
+        ];
 
-        // Add 2 kits Definitions
-        await addKitDefinition({
-          name: 'Panier Alimentaire Complet',
-          categoryId: 'alimentaire',
-          dailyAmount: '150 FCFA',
-          totalValue: '25 000 FCFA',
-          images: ['https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600'],
-          benefits: ['Rapport qualité-prix imbattable', 'Produits certifiés', 'Livraison offerte'],
-          products: ['Riz parfumé de luxe (Sac de 25kg)', 'Huile végétale raffinée (Bidon de 5L)'],
-          deliveryInfo: 'Livré chaque samedi matin gratuitement.'
-        });
+        // Delete existing categories first to avoid duplicates if seeding manually
+        for (const cat of categories) {
+          await deleteCategory(cat.id);
+        }
 
-        await addKitDefinition({
-          name: 'Pack Électroménager Éco',
-          categoryId: 'electromenager',
-          dailyAmount: '450 FCFA',
-          totalValue: '55 000 FCFA',
-          images: ['https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=600'],
-          benefits: ['Idéal coupures d\'électricité', 'Garantie constructeur 12 mois'],
-          products: ['Cuiseur de riz automatique 1.8L', 'Ventilateur rechargeable sur pied'],
-          deliveryInfo: 'Livré sous 48h à domicile.'
-        });
+        const createdCategories: Record<string, string> = {};
+        for (const cat of seedCategories) {
+          const res = await addCategory(cat);
+          // Wait briefly
+        }
 
-        alert("Données du catalogue initialisées avec succès !");
+        // 2. Seed Products (53 items)
+        const seedProducts = [
+          { name: 'Riz La Rizière 1 kg', category: 'Produits alimentaires', subcategory: 'Riz', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150' },
+          { name: 'Petit pois', category: 'Produits alimentaires', subcategory: 'Conserves', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Lait concentré sucré', category: 'Produits alimentaires', subcategory: 'Produits laitiers', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Lait en poudre en boîte', category: 'Produits alimentaires', subcategory: 'Produits laitiers', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Lait en poudre chapelet', category: 'Produits alimentaires', subcategory: 'Produits laitiers', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Spaghetti', category: 'Produits alimentaires', subcategory: 'Féculents', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150' },
+          { name: 'Cube Maggi (plaquette)', category: 'Produits alimentaires', subcategory: 'Assaisonnements', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Jus Presséa', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Sucrerie 1 L', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Sucrerie 1,5 L', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Pack de sucrerie 1 L', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Riz La Rizière 4,5 kg', category: 'Produits alimentaires', subcategory: 'Riz', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150' },
+          { name: 'Pack Coca-Cola 6 × 1 L', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Poulets', category: 'Produits alimentaires', subcategory: 'Produits frais', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: "Plaquette d'œufs", category: 'Produits alimentaires', subcategory: 'Produits frais', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: "1/2 plaquette d'œufs", category: 'Produits alimentaires', subcategory: 'Produits frais', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Assiette de table', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Kit de 6 assiettes cassables', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Complet soupière 5 pièces', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Complet soupière 6 pièces', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Verre normal', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Verre en coupe', category: 'Articles ménagers', subcategory: 'Vaisselle', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Riz La Rizière 22,5 kg', category: 'Produits alimentaires', subcategory: 'Riz', image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=150' },
+          { name: 'Complet de pagne', category: 'Articles ménagers', subcategory: 'Textile', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=150' },
+          { name: 'Mixeur Foutou 3 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Mixeur Foutou 6 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Mixeur Foutou 12 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Mixeur 2 en 1', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Bouilloire électrique', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Air Fryer 6,5 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Air Fryer 9 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Air Fryer 10 L', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Mini cuisinière', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150' },
+          { name: 'Huile Aya 0,9 L', category: 'Produits alimentaires', subcategory: 'Huiles', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Gazinière 4 feux', category: 'Électroménager', subcategory: 'Cuisine', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Gaz B6', category: 'Électroménager', subcategory: 'Gaz', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Gaz B12', category: 'Électroménager', subcategory: 'Gaz', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Réfrigérateur', category: 'Électroménager', subcategory: 'Froid', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Machine à laver 7 kg', category: 'Électroménager', subcategory: 'Lavage', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Ventilateur 15K', category: 'Électroménager', subcategory: 'Confort', image: 'https://images.unsplash.com/photo-1622737133809-d95047b9e673?w=150' },
+          { name: 'Ventilateur 20K', category: 'Électroménager', subcategory: 'Confort', image: 'https://images.unsplash.com/photo-1622737133809-d95047b9e673?w=150' },
+          { name: 'Chauffe-eau électrique', category: 'Électroménager', subcategory: 'Confort', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'Matelas orthopédique', category: 'Électroménager', subcategory: 'Literie', image: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=150' },
+          { name: 'TV 24 pouces', category: 'Électronique', subcategory: 'Général', image: 'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=150' },
+          { name: 'Huile Aya 3 L', category: 'Produits alimentaires', subcategory: 'Huiles', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'TV 32 pouces simple', category: 'Électronique', subcategory: 'Général', image: 'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=150' },
+          { name: 'Tablette enfant', category: 'Électronique', subcategory: 'Général', image: 'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=150' },
+          { name: 'Tablette adulte', category: 'Électronique', subcategory: 'Général', image: 'https://images.unsplash.com/photo-1593305841991-05c297ba4575?w=150' },
+          { name: 'Huile Aya 5 L', category: 'Produits alimentaires', subcategory: 'Huiles', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Tomate Alyssa 370 g', category: 'Produits alimentaires', subcategory: 'Conserves', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Tomate Alyssa 2 kg', category: 'Produits alimentaires', subcategory: 'Conserves', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Sardines Safi', category: 'Produits alimentaires', subcategory: 'Conserves', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' },
+          { name: 'Sucrerie 30 CL', category: 'Produits alimentaires', subcategory: 'Boissons', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=150' }
+        ];
+
+        // Delete existing products
+        for (const prod of products) {
+          await deleteProduct(prod.id);
+        }
+
+        for (const prod of seedProducts) {
+          await addProduct(prod);
+        }
+
+        // 3. Seed Kits (4 items)
+        const seedKits = [
+          {
+            name: 'kit 1',
+            categoryId: 'Gamme Bronze',
+            dailyAmount: '100 FCFA',
+            totalValue: '18 300 FCFA',
+            benefits: [
+              'Grand sac de riz pour nourrir toute la famille élargie',
+              'Boissons et gourmandises festives haut de gamme',
+              'Approvisionnement complet pour les festivités de fin d\'année'
+            ],
+            products: [
+              'Poulets', 'Riz La Rizière 1 kg', 'Huile Aya 0,9 L', 'Tomate Alyssa 370 g',
+              'Petit pois', 'Petit pois', 'Spaghetti', 'Spaghetti', 'Spaghetti', 'Spaghetti',
+              'Spaghetti', 'Sucrerie 1 L', '1/2 plaquette d\'œufs', 'Sardines Safi', 'Sardines Safi'
+            ],
+            deliveryInfo: 'Livraison express offerte sous 48h à domicile.',
+            images: ['https://images.unsplash.com/photo-1542838132-92c53300491e?w=600']
+          },
+          {
+            name: 'kit 2',
+            categoryId: 'Gamme Silver',
+            dailyAmount: '150 FCFA',
+            totalValue: '25 000 FCFA',
+            benefits: [
+              'Idéal pour les petits foyers ou couples',
+              'Ingrédients complets pour un mois de repas variés',
+              'Qualité supérieure et huiles sélectionnées'
+            ],
+            products: [
+              'Riz La Rizière 4,5 kg', 'Huile Aya 3 L', 'Lait concentré sucré',
+              'Plaquette d\'œufs', 'Sucrerie 1,5 L'
+            ],
+            deliveryInfo: 'Livré chaque samedi matin gratuitement.',
+            images: ['https://images.unsplash.com/photo-1586201375761-83865001e31c?w=600']
+          },
+          {
+            name: 'kit 3',
+            categoryId: 'Gamme Gold',
+            dailyAmount: '200 FCFA',
+            totalValue: '45 000 FCFA',
+            benefits: [
+              'Équipement de cuisine performant',
+              'Grand format de riz parfumé',
+              'Mixeur ultra-puissant et robuste'
+            ],
+            products: [
+              'Riz La Rizière 22,5 kg', 'Huile Aya 5 L', 'Mixeur Foutou 3 L',
+              'Bouilloire électrique'
+            ],
+            deliveryInfo: 'Livraison express incluse.',
+            images: ['https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600']
+          },
+          {
+            name: 'kit 4',
+            categoryId: 'Gamme Platinum',
+            dailyAmount: '450 FCFA',
+            totalValue: '55 000 FCFA',
+            benefits: [
+              'Garantie constructeur 12 mois sur l\'électroménager',
+              'Parfait confort pour lutter contre la chaleur',
+              'Qualité Premium certifiée'
+            ],
+            products: [
+              'Ventilateur 20K', 'Machine à laver 7 kg', 'TV 24 pouces'
+            ],
+            deliveryInfo: 'Installé et livré sous 48h.',
+            images: ['https://images.unsplash.com/photo-1584622650111-993a426fbf0a?w=600']
+          }
+        ];
+
+        // Delete existing kits
+        for (const kit of kitDefinitions) {
+          await deleteKitDefinition(kit.id);
+        }
+
+        for (const kit of seedKits) {
+          await addKitDefinition(kit);
+        }
+
+        alert("Base de données initialisée avec brio ! 4 Catégories, 53 Produits et 4 Kits ont été chargés.");
       } catch (err: any) {
-        alert("Erreur d'initialisation : " + err.message);
+        alert("Erreur lors de l'initialisation complète : " + err.message);
       }
     }
   };
@@ -360,6 +600,232 @@ export const KitsView: React.FC = () => {
     }
   };
 
+  // ==========================================
+  // CATEGORIES MANAGEMENT ACTION HANDLERS
+  // ==========================================
+  const handleSaveCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!catName) return;
+
+    try {
+      const defaultImg = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=400";
+      const payload = {
+        name: catName,
+        minDailyAmount: catDailyAmount,
+        imageUrl: catImage || defaultImg
+      };
+
+      if (selectedCategory) {
+        await updateCategory(selectedCategory.id, payload);
+      } else {
+        await addCategory(payload);
+      }
+
+      setIsCategoryModalOpen(false);
+      setSelectedCategory(null);
+      setCatName('');
+      setCatDailyAmount('100 FCFA / jour');
+      setCatImage('');
+      alert("Catégorie enregistrée avec succès !");
+    } catch (err: any) {
+      alert("Erreur lors de l'enregistrement de la catégorie : " + err.message);
+    }
+  };
+
+  const handleEditCategory = (cat: any) => {
+    setSelectedCategory(cat);
+    setCatName(cat.name);
+    setCatDailyAmount(cat.minDailyAmount || '100 FCFA / jour');
+    setCatImage(cat.imageUrl || '');
+    setIsCategoryModalOpen(true);
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    if (window.confirm("Êtes-vous sûr de vouloir supprimer cette catégorie et tous ses kits associés ?")) {
+      try {
+        await deleteCategory(id);
+        alert("Catégorie supprimée !");
+      } catch (err: any) {
+        alert("Erreur de suppression : " + err.message);
+      }
+    }
+  };
+
+  // Drag and Drop for Category Images
+  const processCategoryFile = async (file: File) => {
+    setCatUploadError('');
+    if (!file.type.startsWith('image/')) {
+      setCatUploadError("Le fichier doit être une image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setCatUploadError("L'image est trop lourde (max 5 Mo).");
+      return;
+    }
+    try {
+      const base64Str = await compressImage(file, 600, 600, 0.8);
+      setCatImage(base64Str);
+    } catch (err: any) {
+      setCatUploadError("Erreur de traitement de l'image : " + err.message);
+    }
+  };
+
+  const handleCategoryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processCategoryFile(file);
+    }
+  };
+
+  const handleCatDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setCatIsDragging(true);
+  };
+
+  const handleCatDragLeave = () => {
+    setCatIsDragging(false);
+  };
+
+  const handleCatDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setCatIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processCategoryFile(file);
+    }
+  };
+
+  // Drag and Drop for Product Images
+  const processProductFile = async (file: File) => {
+    setProdUploadError('');
+    if (!file.type.startsWith('image/')) {
+      setProdUploadError("Le fichier doit être une image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProdUploadError("L'image est trop lourde (max 5 Mo).");
+      return;
+    }
+    try {
+      const base64Str = await compressImage(file, 600, 600, 0.8);
+      setProdImage(base64Str);
+    } catch (err: any) {
+      setProdUploadError("Erreur de traitement de l'image : " + err.message);
+    }
+  };
+
+  const handleProductFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processProductFile(file);
+    }
+  };
+
+  const handleProdDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setProdIsDragging(true);
+  };
+
+  const handleProdDragLeave = () => {
+    setProdIsDragging(false);
+  };
+
+  const handleProdDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setProdIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processProductFile(file);
+    }
+  };
+
+  // File handlers for Kit Definition images
+  const processImageFile = async (file: File) => {
+    setUploadError('');
+    if (!file.type.startsWith('image/')) {
+      setUploadError("Le fichier doit être une image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError("L'image est trop lourde (max 5 Mo).");
+      return;
+    }
+    try {
+      const base64Str = await compressImage(file, 600, 600, 0.8);
+      setKitDefImage(base64Str);
+    } catch (err: any) {
+      setUploadError("Erreur de traitement de l'image : " + err.message);
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processImageFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      await processImageFile(file);
+    }
+  };
+
+  // Dynamic Calculation Handlers for Kit Creation/Edition
+  const handleDailyAmountChange = (val: string) => {
+    setKitDefDaily(val);
+    const numericDaily = parseInt(val.replace(/[^0-9]/g, ''), 10) || 0;
+    if (numericDaily > 0) {
+      const remainingDays = getRemainingDaysToDecember15();
+      const total = numericDaily * remainingDays;
+      const formattedTotal = new Intl.NumberFormat('fr-FR').format(total);
+      setKitDefTotal(`${formattedTotal} FCFA`);
+    } else {
+      setKitDefTotal('');
+    }
+  };
+
+  const handleTotalAmountChange = (val: string) => {
+    setKitDefTotal(val);
+    const numericTotal = parseInt(val.replace(/[^0-9]/g, ''), 10) || 0;
+    if (numericTotal > 0) {
+      const remainingDays = getRemainingDaysToDecember15();
+      const daily = Math.round(numericTotal / remainingDays);
+      const formattedDaily = new Intl.NumberFormat('fr-FR').format(daily);
+      setKitDefDaily(`${formattedDaily} FCFA`);
+    } else {
+      setKitDefDaily('');
+    }
+  };
+
+  const handleDailyAmountBlur = () => {
+    const numericDaily = parseInt(kitDefDaily.replace(/[^0-9]/g, ''), 10) || 0;
+    if (numericDaily > 0) {
+      const formattedDaily = new Intl.NumberFormat('fr-FR').format(numericDaily);
+      setKitDefDaily(`${formattedDaily} FCFA`);
+    }
+  };
+
+  const handleTotalAmountBlur = () => {
+    const numericTotal = parseInt(kitDefTotal.replace(/[^0-9]/g, ''), 10) || 0;
+    if (numericTotal > 0) {
+      const formattedTotal = new Intl.NumberFormat('fr-FR').format(numericTotal);
+      setKitDefTotal(`${formattedTotal} FCFA`);
+    }
+  };
+
   // Kit Definitions management
   const handleSaveKitDef = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,16 +897,25 @@ export const KitsView: React.FC = () => {
     );
   };
 
+  const setProductQuantity = (prodName: string, qty: number) => {
+    const targetQty = Math.max(0, qty);
+    setKitDefSelectedProducts(prev => {
+      const withoutProduct = prev.filter(name => name !== prodName);
+      const added = Array(targetQty).fill(prodName);
+      return [...withoutProduct, ...added];
+    });
+  };
+
   return (
     <div className="space-y-6 font-sans">
       {/* 1. Header & Tabs Navigation */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-200/60 dark:border-slate-800 pb-2">
         <div>
           <h1 className="text-3xl font-black font-display text-slate-900 dark:text-white tracking-tight">
-            Packs & Kits de Distribution
+            Penta GAD Distribution
           </h1>
           <p className="text-slate-500 dark:text-slate-400 mt-0.5 text-xs">
-            Admin Panel : Suivez les abonnements, gérez les leads, configurez les packs et le catalogue de produits maîtres.
+            Admin Panel : Suivez les abonnements, gérez les leads, configurez les catégories de pack et le catalogue de produits maîtres.
           </p>
         </div>
 
@@ -448,7 +923,7 @@ export const KitsView: React.FC = () => {
         <div className="flex flex-wrap items-center gap-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-2xl border border-slate-200/50 dark:border-slate-800/80">
           <button
             onClick={() => setActiveTab('plans')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'plans'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
@@ -458,7 +933,7 @@ export const KitsView: React.FC = () => {
           </button>
           <button
             onClick={() => setActiveTab('leads')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative ${
               activeTab === 'leads'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
@@ -472,24 +947,44 @@ export const KitsView: React.FC = () => {
             )}
           </button>
           <button
-            onClick={() => setActiveTab('catalog')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'catalog'
+            onClick={() => setActiveTab('categories')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'categories'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Configuration des Packs
+            Gérer Catégories ({categories.length})
           </button>
           <button
-            onClick={() => setActiveTab('products')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              activeTab === 'products'
+            onClick={() => setActiveTab('kits')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'kits'
                 ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            Produits Maîtres
+            Gérer Kits ({kitDefinitions.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('catalogue')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'catalogue'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Catalogue ({products.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('personnaliser')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'personnaliser'
+                ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            Personnaliser
           </button>
         </div>
       </div>
@@ -499,6 +994,7 @@ export const KitsView: React.FC = () => {
         {/* TAB 1 : ACTIVE CUSTOMER SUBSCRIPTIONS */}
         {activeTab === 'plans' && (
           <motion.div
+            key="plans"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -640,6 +1136,7 @@ export const KitsView: React.FC = () => {
         {/* TAB 2 : PUBLIC SUBSCRIPTIONS LEADS */}
         {activeTab === 'leads' && (
           <motion.div
+            key="leads"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
@@ -736,54 +1233,160 @@ export const KitsView: React.FC = () => {
           </motion.div>
         )}
 
-        {/* TAB 3 : CONFIGURE COMPLEX KITS (LES PACKS) */}
-        {activeTab === 'catalog' && (
+        {/* TAB 3 : GÉRER CATÉGORIES */}
+        {activeTab === 'categories' && (
           <motion.div
+            key="categories"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             className="space-y-6"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="inline-flex items-center gap-2 p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-xs text-emerald-700 dark:text-emerald-400">
-                <Package className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                <span>Configurez ici les packs disponibles sur la Vitrine client. Saisissez l'acompte journalier et le coût total.</span>
+            {/* Header */}
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Gérer Catégories ({categories.length})</h2>
+                <p className="text-xs text-slate-500">Configurez les grandes gammes de kits (ex: Bronze, Silver, Gold, Platinum).</p>
               </div>
-              <div className="flex gap-2">
-                {kitDefinitions.length === 0 && (
-                  <button
-                    onClick={handleSeedDefaultCatalog}
-                    className="px-3.5 py-2 border border-emerald-600/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50/20 font-bold rounded-xl text-xs cursor-pointer"
-                  >
-                    Générer Kits de Démo
-                  </button>
-                )}
+              <button
+                onClick={() => {
+                  setSelectedCategory(null);
+                  setCatName('');
+                  setCatDailyAmount('100 FCFA / jour');
+                  setCatImage('');
+                  setIsCategoryModalOpen(true);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10"
+              >
+                <Plus className="w-4 h-4" /> Nouvelle Catégorie
+              </button>
+            </div>
+
+            {/* Category Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 pt-2">
+              {categories.length === 0 ? (
+                <div className="col-span-full p-12 bg-slate-50 dark:bg-slate-900 border border-slate-200/40 rounded-3xl text-center text-slate-400 text-xs">
+                  Aucune catégorie enregistrée. Cliquez sur "Nouvelle Catégorie" ou initialisez la base depuis l'onglet "Personnaliser".
+                </div>
+              ) : (
+                categories.map(cat => (
+                  <div key={cat.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between group relative">
+                    <div className="aspect-[4/3] bg-slate-50 relative overflow-hidden">
+                      <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" referrerPolicy="no-referrer" />
+                      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => handleEditCategory(cat)}
+                          className="p-1.5 bg-white text-slate-700 rounded-lg shadow-md hover:bg-slate-100 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCategory(cat.id)}
+                          className="p-1.5 bg-white text-rose-600 rounded-lg shadow-md hover:bg-rose-50 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm tracking-tight">{cat.name}</h3>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] text-slate-400">
+                        <span>Acompte estimé</span>
+                        <strong className="text-emerald-600 dark:text-emerald-400 font-bold">{cat.minDailyAmount}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {/* TAB 4 : GÉRER KITS */}
+        {activeTab === 'kits' && (
+          <motion.div
+            key="kits"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="space-y-6"
+          >
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Gérer Kits ({kitDefinitions.length})</h2>
+                <p className="text-xs text-slate-500">Gérez les packs cadeaux configurés et liés à vos catégories.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedKitDef(null);
+                  setKitDefName('');
+                  setKitDefBenefits('');
+                  const remainingDays = getRemainingDaysToDecember15();
+                  const defaultTotal = 25000;
+                  const calculatedDaily = Math.round(defaultTotal / remainingDays);
+                  setKitDefTotal(`${new Intl.NumberFormat('fr-FR').format(defaultTotal)} FCFA`);
+                  setKitDefDaily(`${new Intl.NumberFormat('fr-FR').format(calculatedDaily)} FCFA`);
+                  setKitDefCategory(categories[0]?.name || 'Gamme Bronze');
+                  setKitDefSelectedProducts([]);
+                  setKitDefImage('');
+                  setIsKitDefModalOpen(true);
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
+              >
+                <Plus className="w-4 h-4" /> Nouveau Kit
+              </button>
+            </div>
+
+            {/* Filter by Category */}
+            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-900 overflow-x-auto">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex-shrink-0">Filtrer par catégorie de pack:</span>
+              <div className="flex gap-1.5 flex-nowrap md:flex-wrap">
                 <button
-                  onClick={() => {
-                    setSelectedKitDef(null);
-                    setKitDefName('');
-                    setKitDefBenefits('');
-                    setKitDefDaily('150 FCFA');
-                    setKitDefTotal('25 000 FCFA');
-                    setKitDefSelectedProducts([]);
-                    setKitDefImage('');
-                    setIsKitDefModalOpen(true);
-                  }}
-                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer inline-flex items-center gap-1"
+                  onClick={() => setSelectedKitCategoryFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    selectedKitCategoryFilter === 'all'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/50 dark:border-slate-800'
+                  }`}
                 >
-                  <Plus className="w-4 h-4" /> Configurer un Pack
+                  Tous les packs ({kitDefinitions.length})
                 </button>
+                {categories.map(cat => {
+                  const count = kitDefinitions.filter(k => k.categoryId === cat.name).length;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedKitCategoryFilter(cat.name)}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                        selectedKitCategoryFilter === cat.name
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/50 dark:border-slate-800'
+                      }`}
+                    >
+                      {cat.name} ({count})
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            {/* List of defined packs in catalog */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {kitDefinitions.length === 0 ? (
-                <div className="col-span-full p-12 bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 rounded-3xl text-center text-slate-400 text-xs">
-                  Aucun kit configuré en base pour la vitrine. Cliquez sur "Configurer un Pack" ou "Générer Kits de Démo" ci-dessus.
-                </div>
-              ) : (
-                kitDefinitions.map(def => (
+            {/* Kit Definitions Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+              {(() => {
+                const filteredKits = selectedKitCategoryFilter === 'all'
+                  ? kitDefinitions
+                  : kitDefinitions.filter(k => k.categoryId === selectedKitCategoryFilter);
+
+                if (filteredKits.length === 0) {
+                  return (
+                    <div className="col-span-full p-12 bg-slate-50 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 rounded-3xl text-center text-slate-400 text-xs">
+                      Aucun pack de cette catégorie trouvé.
+                    </div>
+                  );
+                }
+
+                return filteredKits.map(def => (
                   <div key={def.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm flex flex-col justify-between">
                     <div className="relative aspect-[16/10] bg-slate-50">
                       <img src={def.images[0]} alt={def.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -805,51 +1408,60 @@ export const KitsView: React.FC = () => {
 
                     <div className="p-5 space-y-4">
                       <div>
-                        <span className="text-[9px] uppercase font-bold text-slate-400 block">{def.categoryId === 'alimentaire' ? 'Panier Alimentaire' : 'Électroménager'}</span>
+                        <span className="text-[9px] uppercase font-bold text-emerald-600 bg-emerald-500/5 px-2 py-0.5 rounded-full inline-block mb-1">{def.categoryId}</span>
                         <h4 className="font-bold text-slate-900 dark:text-white text-sm tracking-tight">{def.name}</h4>
                       </div>
 
                       <div className="space-y-1">
                         <span className="text-[9px] uppercase font-bold text-slate-400 block">Articles inclus :</span>
                         <div className="flex flex-wrap gap-1">
-                          {def.products.map((p, pi) => (
-                            <span key={pi} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px]">
-                              {p}
-                            </span>
-                          ))}
+                          {(() => {
+                            // Let's count occurrences to display quantity nicely like "Spaghetti (5)"
+                            const itemCounts: Record<string, number> = {};
+                            def.products.forEach(p => {
+                              itemCounts[p] = (itemCounts[p] || 0) + 1;
+                            });
+                            return Object.entries(itemCounts).map(([pName, count]) => (
+                              <span key={pName} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] flex items-center gap-1">
+                                {pName} {count > 1 && <strong className="text-emerald-600 font-bold">({count})</strong>}
+                              </span>
+                            ));
+                          })()}
                         </div>
                       </div>
 
                       <div className="border-t border-slate-100 dark:border-slate-850 pt-3 flex items-center justify-between">
                         <div>
-                          <span className="text-[9px] uppercase font-bold text-slate-400">Acompte</span>
-                          <strong className="text-emerald-600 dark:text-emerald-400 text-xs block">{def.dailyAmount} / jour</strong>
+                          <span className="text-[9px] uppercase font-bold text-slate-400">Contribution Jour</span>
+                          <strong className="text-emerald-600 dark:text-emerald-400 text-xs block font-bold">{def.dailyAmount}</strong>
                         </div>
                         <div className="text-right">
-                          <span className="text-[9px] uppercase font-bold text-slate-400">Valeur totale</span>
-                          <strong className="text-slate-800 dark:text-slate-200 text-xs block">{def.totalValue}</strong>
+                          <span className="text-[9px] uppercase font-bold text-slate-400">Total Package Value</span>
+                          <strong className="text-slate-800 dark:text-slate-200 text-xs block font-bold">{def.totalValue}</strong>
                         </div>
                       </div>
                     </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
           </motion.div>
         )}
 
-        {/* TAB 4 : MASTER PRODUCTS MANAGEMENT */}
-        {activeTab === 'products' && (
+        {/* TAB 5 : CATALOGUE */}
+        {activeTab === 'catalogue' && (
           <motion.div
+            key="catalogue"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             className="space-y-6"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="inline-flex items-center gap-2 p-2.5 bg-emerald-500/5 border border-emerald-500/20 rounded-2xl text-xs text-emerald-700 dark:text-emerald-400">
-                <Package className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                <span>Base maîtresse des produits individuels en stock pouvant être groupés dans les packs.</span>
+            {/* Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800 gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Catalogue Gérant</h2>
+                <p className="text-xs text-slate-500">Gérez les produits servant à composer vos kits ({products.length} produits enregistrés)</p>
               </div>
               <button
                 onClick={() => {
@@ -859,20 +1471,60 @@ export const KitsView: React.FC = () => {
                   setProdImage('');
                   setIsProductModalOpen(true);
                 }}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer inline-flex items-center gap-1 self-start sm:self-auto"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
               >
-                <Plus className="w-4 h-4" /> Ajouter un Produit
+                <Plus className="w-4 h-4" /> Nouveau Produit
               </button>
             </div>
 
-            {/* List of master products */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {products.length === 0 ? (
-                <div className="col-span-full p-12 bg-white dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800 rounded-3xl text-center text-slate-400 text-xs">
-                  Aucun produit enregistré dans la base maîtresse.
-                </div>
-              ) : (
-                products.map(prod => (
+            {/* Search and Filter */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900">
+              <div className="relative md:col-span-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un produit, catégorie, marque..."
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-xs text-slate-900 dark:text-white"
+                />
+              </div>
+              <div className="md:col-span-2 flex flex-wrap gap-1">
+                {['all', 'Produits alimentaires', 'Articles ménagers', 'Électroménager', 'Électronique'].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCatalogueCategoryFilter(cat)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                      selectedCatalogueCategoryFilter === cat
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-slate-200/50 dark:border-slate-800 hover:bg-slate-100'
+                    }`}
+                  >
+                    {cat === 'all' ? 'Tous' : cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Catalogue List Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 pt-2">
+              {(() => {
+                const filteredProds = products.filter(p => {
+                  const matchCat = selectedCatalogueCategoryFilter === 'all' || p.category === selectedCatalogueCategoryFilter;
+                  const matchSearch = p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
+                    (p.subcategory || '').toLowerCase().includes(productSearchQuery.toLowerCase());
+                  return matchCat && matchSearch;
+                });
+
+                if (filteredProds.length === 0) {
+                  return (
+                    <div className="col-span-full p-12 bg-slate-50 dark:bg-slate-900 border border-slate-200/40 rounded-3xl text-center text-slate-400 text-xs">
+                      Aucun produit ne correspond à ces critères.
+                    </div>
+                  );
+                }
+
+                return filteredProds.map(prod => (
                   <div key={prod.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-3 flex flex-col justify-between relative overflow-hidden group">
                     <div className="relative aspect-square rounded-xl bg-slate-50 overflow-hidden mb-2">
                       <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -892,16 +1544,74 @@ export const KitsView: React.FC = () => {
                       </div>
                     </div>
                     <div>
-                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wide block">
-                        {prod.category === 'alimentaire' ? 'Alimentaire' : 'Électroménager'} {prod.subcategory && `• ${prod.subcategory}`}
+                      <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block">
+                        {prod.category} {prod.subcategory && `• ${prod.subcategory}`}
                       </span>
                       <h4 className="font-semibold text-slate-800 dark:text-slate-200 text-[11px] leading-tight truncate mt-0.5" title={prod.name}>
                         {prod.name}
                       </h4>
                     </div>
                   </div>
-                ))
-              )}
+                ));
+              })()}
+            </div>
+          </motion.div>
+        )}
+
+        {/* TAB 6 : PERSONNALISER */}
+        {activeTab === 'personnaliser' && (
+          <motion.div
+            key="personnaliser"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="space-y-6"
+          >
+            <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm p-6 space-y-6 max-w-2xl">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Personnaliser votre Plateforme</h2>
+                <p className="text-xs text-slate-500">Ajustez l'index d'agencement et gérez l'état global du catalogue de distribution.</p>
+              </div>
+
+              <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-4 text-xs">
+                <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl space-y-3">
+                  <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-500" />
+                    Initialisation / Réinitialisation Complète
+                  </h3>
+                  <p className="text-slate-500 text-[11px] leading-relaxed">
+                    Vous pouvez écraser toutes vos données de kits, catégories et catalogue actuels pour charger la démo complète de Penta GAD Distribution de <strong>53 produits, 4 catégories de pack (Gamme Bronze, Silver, Gold, Platinum) et 4 kits publics</strong>.
+                  </p>
+                  <button
+                    onClick={handleSeedDefaultCatalog}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-[11px] transition-all cursor-pointer shadow-sm shadow-emerald-500/10"
+                  >
+                    Réinitialiser & Charger les 53 Produits Démo
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <h3 className="font-bold text-slate-800 dark:text-slate-200">Index d'agencement des Packs</h3>
+                  <p className="text-slate-500 text-[11px]">Réglez l'index de tri d'affichage de vos kits et produits par défaut.</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Tri par défaut des Packs</label>
+                      <select className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200">
+                        <option>Par index d'agencement (Ordre croissant)</option>
+                        <option>Par valeur financière (Croissant)</option>
+                        <option>Par valeur financière (Décroissant)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Affichage du Catalogue Gérant</label>
+                      <select className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200">
+                        <option>Ordre alphabétique des noms (A-Z)</option>
+                        <option>Ajoutés récemment d'abord</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
@@ -1103,39 +1813,87 @@ export const KitsView: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Catégorie *</label>
-                  <select
-                    value={prodCategory}
-                    onChange={(e) => setProdCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-                  >
-                    <option value="alimentaire">Alimentaire</option>
-                    <option value="electromenager">Électroménager</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Sous-catégorie</label>
-                  <input
-                    type="text"
-                    value={prodSubcategory}
-                    onChange={(e) => setProdSubcategory(e.target.value)}
-                    placeholder="Ex: Céréales"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-                  />
-                </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Sous-catégorie</label>
+                <input
+                  type="text"
+                  value={prodSubcategory}
+                  onChange={(e) => setProdSubcategory(e.target.value)}
+                  placeholder="Ex: Céréales"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">URL de la Photo</label>
-                <input
-                  type="url"
-                  value={prodImage}
-                  onChange={(e) => setProdImage(e.target.value)}
-                  placeholder="Ex: https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-mono text-[10px]"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">
+                  Photo du Produit *
+                </label>
+
+                {/* Product Drag and Drop Zone */}
+                <div
+                  onDragOver={handleProdDragOver}
+                  onDragLeave={handleProdDragLeave}
+                  onDrop={handleProdDrop}
+                  onClick={() => prodFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center transition-all cursor-pointer relative ${
+                    prodIsDragging
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-900/60'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    ref={prodFileInputRef}
+                    onChange={handleProductFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {prodImage ? (
+                    <div className="flex flex-col items-center space-y-2 w-full">
+                      <div className="relative group w-32 h-32 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                        <img
+                          src={prodImage}
+                          alt="Prévisualisation"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-[10px] text-white font-bold bg-slate-900/80 px-2 py-1 rounded">Changer</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Image chargée
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setProdImage('');
+                        }}
+                        className="text-[10px] text-rose-500 hover:text-rose-400 font-bold underline cursor-pointer"
+                      >
+                        Retirer la photo
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center py-2 text-center space-y-2">
+                      <UploadCloud className="w-8 h-8 text-slate-400" />
+                      <div>
+                        <p className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                          Glissez-déposez une image ici
+                        </p>
+                        <p className="text-[9px] text-slate-400">
+                          ou cliquez pour parcourir vos fichiers
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {prodUploadError && (
+                  <p className="text-rose-500 text-[10px] mt-1 font-bold">{prodUploadError}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
@@ -1215,7 +1973,8 @@ export const KitsView: React.FC = () => {
                     type="text"
                     required
                     value={kitDefDaily}
-                    onChange={(e) => setKitDefDaily(e.target.value)}
+                    onChange={(e) => handleDailyAmountChange(e.target.value)}
+                    onBlur={handleDailyAmountBlur}
                     placeholder="Ex: 150 FCFA"
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-bold text-emerald-600"
                   />
@@ -1226,10 +1985,22 @@ export const KitsView: React.FC = () => {
                     type="text"
                     required
                     value={kitDefTotal}
-                    onChange={(e) => setKitDefTotal(e.target.value)}
+                    onChange={(e) => handleTotalAmountChange(e.target.value)}
+                    onBlur={handleTotalAmountBlur}
                     placeholder="Ex: 25 000 FCFA"
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-bold"
                   />
+                </div>
+              </div>
+
+              {/* Campaign Helper Banner */}
+              <div className="bg-emerald-50/50 dark:bg-emerald-950/10 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl p-3 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                <div className="space-y-0.5">
+                  <p className="font-bold text-slate-800 dark:text-slate-200 text-[10px]">Calculateur de Tontine (15 Juin – 15 Décembre)</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Il reste <strong className="text-emerald-700 dark:text-emerald-300 font-bold">{getRemainingDaysToDecember15()} jours</strong> de campagne. Le montant quotidien ou total est automatiquement réévalué.
+                  </p>
                 </div>
               </div>
 
@@ -1255,40 +2026,179 @@ export const KitsView: React.FC = () => {
                 />
               </div>
 
-              {/* Multi-select checklist for products from Master Catalog */}
+              {/* Multi-select checklist for products from Master Catalog with Quantities */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Sélectionner les articles inclus * ({kitDefSelectedProducts.length} choisis)</label>
-                <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50 dark:bg-slate-950/40 space-y-1.5 max-h-[140px] overflow-y-auto">
+                
+                {/* Product Search Box */}
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="relative flex-grow">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher un article du catalogue..."
+                      value={kitProductSearch}
+                      onChange={(e) => setKitProductSearch(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none text-[10px] text-slate-900 dark:text-white font-medium"
+                    />
+                  </div>
+                  {kitProductSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setKitProductSearch('')}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 font-bold"
+                    >
+                      Effacer
+                    </button>
+                  )}
+                </div>
+
+                <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-50 dark:bg-slate-950/40 space-y-1.5 max-h-[180px] overflow-y-auto">
                   {products.length === 0 ? (
                     <p className="text-slate-400 text-[10px] italic">Aucun produit disponible dans la base maîtresse. Enregistrez des produits dans l'onglet "Produits Maîtres" d'abord.</p>
-                  ) : (
-                    products.map(p => {
-                      const isChecked = kitDefSelectedProducts.includes(p.name);
+                  ) : (() => {
+                    const filteredProducts = products.filter(p => 
+                      p.name.toLowerCase().includes(kitProductSearch.toLowerCase()) ||
+                      (p.subcategory && p.subcategory.toLowerCase().includes(kitProductSearch.toLowerCase()))
+                    );
+
+                    if (filteredProducts.length === 0) {
+                      return <p className="text-slate-400 text-[10px] italic py-2 text-center">Aucun article ne correspond à votre recherche.</p>;
+                    }
+
+                    return filteredProducts.map(p => {
+                      const count = kitDefSelectedProducts.filter(name => name === p.name).length;
                       return (
-                        <label key={p.id} className="flex items-center gap-2 py-1 cursor-pointer hover:bg-slate-100/50 rounded px-1.5">
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleToggleProductSelection(p.name)}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                          />
-                          <span className="font-medium text-slate-700 dark:text-slate-300 text-[10px]">{p.name}</span>
-                        </label>
+                        <div key={p.id} className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-100/60 dark:border-slate-900/60 last:border-0 hover:bg-slate-100/30 rounded px-1.5">
+                          <div className="flex items-center gap-2 flex-grow min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={count > 0}
+                              onChange={() => {
+                                if (count > 0) {
+                                  setProductQuantity(p.name, 0);
+                                } else {
+                                  setProductQuantity(p.name, 1);
+                                }
+                              }}
+                              className="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <div className="min-w-0">
+                              <p className="font-bold text-slate-800 dark:text-slate-200 text-[10px] truncate">{p.name}</p>
+                              {p.subcategory && (
+                                <p className="text-[8px] text-slate-400 font-bold uppercase">{p.subcategory}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Quantity selector */}
+                          <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setProductQuantity(p.name, count - 1)}
+                              disabled={count === 0}
+                              className="w-5 h-5 flex items-center justify-center bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-[10px]"
+                            >
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={count === 0 ? "" : count}
+                              placeholder="0"
+                              onChange={(e) => {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                const numericVal = val === "" ? 0 : parseInt(val, 10);
+                                setProductQuantity(p.name, numericVal);
+                              }}
+                              className="w-6 text-center font-bold text-[10px] text-slate-850 dark:text-slate-100 focus:outline-none bg-transparent"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setProductQuantity(p.name, count + 1)}
+                              className="w-5 h-5 flex items-center justify-center bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded cursor-pointer text-[10px]"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Photo d'illustration (URL)</label>
-                <input
-                  type="url"
-                  value={kitDefImage}
-                  onChange={(e) => setKitDefImage(e.target.value)}
-                  placeholder="Ex: https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-mono text-[10px]"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">
+                  Photo d'illustration du Pack *
+                </label>
+
+                {/* Drag and Drop Zone */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center transition-all cursor-pointer relative ${
+                    isDragging
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-900/60'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {kitDefImage ? (
+                    <div className="flex flex-col items-center space-y-2 w-full">
+                      <div className="relative group w-32 h-32 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                        <img
+                          src={kitDefImage}
+                          alt="Prévisualisation du Kit"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-[10px] text-white font-bold bg-slate-900/80 px-2 py-1 rounded">Changer</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Image chargée
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setKitDefImage('');
+                        }}
+                        className="text-[10px] text-rose-500 hover:text-rose-400 font-bold underline cursor-pointer"
+                      >
+                        Retirer l'image
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center py-2 text-center space-y-2">
+                      <UploadCloud className="w-8 h-8 text-slate-400" />
+                      <div>
+                        <p className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                          Glissez-déposez une image ici
+                        </p>
+                        <p className="text-[9px] text-slate-400">
+                          ou cliquez pour parcourir vos fichiers
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {uploadError && (
+                  <p className="text-rose-500 text-[10px] mt-1 font-bold">{uploadError}</p>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 flex-shrink-0">
@@ -1307,6 +2217,149 @@ export const KitsView: React.FC = () => {
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md cursor-pointer"
                 >
                   {selectedKitDef ? "Sauvegarder" : "Créer le pack"}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* E. CATEGORY ADD/EDIT MODAL */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-sm overflow-hidden animate-none"
+          >
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60">
+              <h3 className="font-bold text-slate-900 dark:text-white font-display text-sm">
+                {selectedCategory ? "Modifier la Catégorie" : "Ajouter une Catégorie de Pack"}
+              </h3>
+              <button 
+                onClick={() => {
+                  setIsCategoryModalOpen(false);
+                  setSelectedCategory(null);
+                }} 
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCategory} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Nom de la Catégorie *</label>
+                <input
+                  type="text"
+                  required
+                  value={catName}
+                  onChange={(e) => setCatName(e.target.value)}
+                  placeholder="Ex: Gamme Platinum"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Acompte Journalier Estimé *</label>
+                <input
+                  type="text"
+                  required
+                  value={catDailyAmount}
+                  onChange={(e) => setCatDailyAmount(e.target.value)}
+                  placeholder="Ex: 200 FCFA / jour"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">
+                  Image de la Catégorie *
+                </label>
+
+                {/* Category Drag and Drop Zone */}
+                <div
+                  onDragOver={handleCatDragOver}
+                  onDragLeave={handleCatDragLeave}
+                  onDrop={handleCatDrop}
+                  onClick={() => catFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center transition-all cursor-pointer relative ${
+                    catIsDragging
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 hover:bg-slate-100 dark:hover:bg-slate-900/60'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    ref={catFileInputRef}
+                    onChange={handleCategoryFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {catImage ? (
+                    <div className="flex flex-col items-center space-y-2 w-full">
+                      <div className="relative group w-32 h-32 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                        <img
+                          src={catImage}
+                          alt="Prévisualisation"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="text-[10px] text-white font-bold bg-slate-900/80 px-2 py-1 rounded">Changer</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400">
+                        Image chargée
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCatImage('');
+                        }}
+                        className="text-[10px] text-rose-500 hover:text-rose-400 font-bold underline cursor-pointer"
+                      >
+                        Retirer l'image
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center py-2 text-center space-y-2">
+                      <UploadCloud className="w-8 h-8 text-slate-400" />
+                      <div>
+                        <p className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">
+                          Glissez-déposez une image ici
+                        </p>
+                        <p className="text-[9px] text-slate-400">
+                          ou cliquez pour parcourir vos fichiers
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {catUploadError && (
+                  <p className="text-rose-500 text-[10px] mt-1 font-bold">{catUploadError}</p>
+                )}
+              </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCategoryModalOpen(false);
+                    setSelectedCategory(null);
+                  }}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md cursor-pointer"
+                >
+                  {selectedCategory ? "Sauvegarder" : "Créer la catégorie"}
                 </button>
               </div>
             </form>

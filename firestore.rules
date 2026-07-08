@@ -49,5 +49,8 @@ service cloud.firestore {
     match /subscriptions/{document} {
       allow read, write: if true;
     }
+    match /categories/{document} {
+      allow read, write: if true;
+    }
   }
 }

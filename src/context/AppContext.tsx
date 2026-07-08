@@ -17,6 +17,7 @@ import {
   Role,
   ModuleRegistry,
   PlatformSettings,
+  Category,
   Product,
   Kit,
   Subscription
@@ -33,6 +34,7 @@ import {
   SettingsRepository,
   seedPlatformData,
   ProductRepository,
+  CategoryRepository,
   KitDefinitionRepository,
   SubscriptionRepository
 } from '../repositories/database';
@@ -65,6 +67,7 @@ interface AppContextType {
   logs: ActivityLog[];
   roles: Role[];
   modules: ModuleRegistry[];
+  categories: Category[];
   products: Product[];
   kitDefinitions: Kit[];
   subscriptions: Subscription[];
@@ -114,6 +117,10 @@ interface AppContextType {
   updateProduct: (id: string, updates: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
 
+  addCategory: (category: Omit<Category, 'id'>) => Promise<void>;
+  updateCategory: (id: string, updates: Partial<Category>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
+
   addKitDefinition: (kit: Omit<Kit, 'id'>) => Promise<void>;
   updateKitDefinition: (id: string, updates: Partial<Kit>) => Promise<void>;
   deleteKitDefinition: (id: string) => Promise<void>;
@@ -145,6 +152,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<ModuleRegistry[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [kitDefinitions, setKitDefinitions] = useState<Kit[]>([]);
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
@@ -477,7 +485,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubProducts = onSnapshot(
       query(collection(db, 'products'), orderBy('name', 'asc')),
       (snapshot) => {
-        setProducts(snapshot.docs.map(doc => doc.data() as Product));
+        setProducts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product)));
       },
       (err) => console.error("Erreur temps réel Products:", err)
     );
@@ -485,14 +493,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubKitsDef = onSnapshot(
       query(collection(db, 'kit_definitions'), orderBy('name', 'asc')),
       (snapshot) => {
-        setKitDefinitions(snapshot.docs.map(doc => doc.data() as Kit));
+        setKitDefinitions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Kit)));
       },
       (err) => console.error("Erreur temps réel Kit Definitions:", err)
+    );
+
+    const unsubCategories = onSnapshot(
+      query(collection(db, 'categories'), orderBy('name', 'asc')),
+      (snapshot) => {
+        setCategories(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category)));
+      },
+      (err) => console.error("Erreur temps réel Categories:", err)
     );
 
     return () => {
       unsubProducts();
       unsubKitsDef();
+      unsubCategories();
     };
   }, []);
 
@@ -736,6 +753,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addCategory = async (category: Omit<Category, 'id'>) => {
+    await CategoryRepository.create(category);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'create', `Création d'une catégorie de pack : ${category.name}`);
+    }
+  };
+
+  const updateCategory = async (id: string, updates: Partial<Category>) => {
+    await CategoryRepository.update(id, updates);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'update', `Mise à jour de la catégorie ID: ${id}`);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    await CategoryRepository.delete(id);
+    if (currentUser) {
+      await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'delete', `Suppression de la catégorie ID: ${id}`);
+    }
+  };
+
   const addKitDefinition = async (kit: Omit<Kit, 'id'>) => {
     await KitDefinitionRepository.create(kit);
     if (currentUser) {
@@ -801,6 +839,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         logs,
         roles,
         modules,
+        categories,
         products,
         kitDefinitions,
         subscriptions,
@@ -835,6 +874,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addProduct,
         updateProduct,
         deleteProduct,
+        addCategory,
+        updateCategory,
+        deleteCategory,
         addKitDefinition,
         updateKitDefinition,
         deleteKitDefinition,

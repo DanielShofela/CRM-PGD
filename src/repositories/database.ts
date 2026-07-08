@@ -31,6 +31,7 @@ import {
   Role,
   ModuleRegistry,
   PlatformSettings,
+  Category,
   Product,
   Kit,
   Subscription
@@ -511,13 +512,39 @@ export const SettingsRepository = {
 };
 
 // ==========================================
+// 9.5 REPOSITORY CATEGORIES (PACKS CATEGORIES)
+// ==========================================
+export const CategoryRepository = {
+  async getAll(): Promise<Category[]> {
+    const q = query(collection(db, 'categories'), orderBy('name', 'asc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Category));
+  },
+
+  async create(category: Omit<Category, 'id'>): Promise<Category> {
+    const id = generateId();
+    const newCategory: Category = { ...category, id };
+    await setDoc(doc(db, 'categories', id), newCategory);
+    return newCategory;
+  },
+
+  async update(id: string, updates: Partial<Category>): Promise<void> {
+    await updateDoc(doc(db, 'categories', id), updates);
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, 'categories', id));
+  }
+};
+
+// ==========================================
 // 10. REPOSITORY PRODUITS (PRODUCTS CATALOG)
 // ==========================================
 export const ProductRepository = {
   async getAll(): Promise<Product[]> {
     const q = query(collection(db, 'products'), orderBy('name', 'asc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => doc.data() as Product);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
   },
 
   async create(product: Omit<Product, 'id'>): Promise<Product> {
@@ -543,7 +570,7 @@ export const KitDefinitionRepository = {
   async getAll(): Promise<Kit[]> {
     const q = query(collection(db, 'kit_definitions'), orderBy('name', 'asc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => doc.data() as Kit);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Kit));
   },
 
   async create(kit: Omit<Kit, 'id'>): Promise<Kit> {
@@ -569,7 +596,7 @@ export const SubscriptionRepository = {
   async getAll(): Promise<Subscription[]> {
     const q = query(collection(db, 'subscriptions'), orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => doc.data() as Subscription);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Subscription));
   },
 
   async create(sub: Omit<Subscription, 'id' | 'createdAt'>): Promise<Subscription> {

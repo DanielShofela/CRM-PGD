@@ -486,15 +486,33 @@ export const ClientRegistrationView: React.FC = () => {
                     {/* Products list overview */}
                     <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
                       <p className="font-bold text-slate-400 uppercase text-[9px] tracking-wider mb-1.5">Inclus dans le pack :</p>
-                      {kit.products.slice(0, 3).map((prod, pi) => (
-                        <div key={pi} className="flex items-center gap-1.5">
-                          <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                          <span className="truncate">{prod}</span>
-                        </div>
-                      ))}
-                      {kit.products.length > 3 && (
-                        <p className="text-[10px] italic text-emerald-600 font-semibold pl-5">Et {kit.products.length - 3} autres produits...</p>
-                      )}
+                      {(() => {
+                        const counts: Record<string, number> = {};
+                        kit.products.forEach(p => {
+                          counts[p] = (counts[p] || 0) + 1;
+                        });
+                        const uniqueItems = Object.entries(counts);
+                        return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => (
+                          <div key={pi} className="flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            <span className="truncate">
+                              {prodName} {qty > 1 && <span className="text-emerald-600 font-bold">({qty})</span>}
+                            </span>
+                          </div>
+                        ));
+                      })()}
+                      {(() => {
+                        const counts: Record<string, number> = {};
+                        kit.products.forEach(p => {
+                          counts[p] = (counts[p] || 0) + 1;
+                        });
+                        const totalUnique = Object.keys(counts).length;
+                        return totalUnique > 3 && (
+                          <p className="text-[10px] italic text-emerald-600 font-semibold pl-5">
+                            Et {totalUnique - 3} autre(s) type(s) d'articles...
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -586,14 +604,25 @@ export const ClientRegistrationView: React.FC = () => {
               <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/60">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Détail des articles inclus :</p>
                 <div className="space-y-2">
-                  {activeKit.products.map((p, pi) => (
-                    <div key={pi} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800/50 flex items-center gap-3">
-                      <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0">
-                        {pi + 1}
+                  {(() => {
+                    const counts: Record<string, number> = {};
+                    activeKit.products.forEach(p => {
+                      counts[p] = (counts[p] || 0) + 1;
+                    });
+                    return Object.entries(counts).map(([prodName, qty], pi) => (
+                      <div key={pi} className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-100 dark:border-slate-800/50 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0">
+                            {pi + 1}
+                          </div>
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{prodName}</span>
+                        </div>
+                        <span className="px-2.5 py-1 bg-slate-200/60 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-black">
+                          Qté: {qty}
+                        </span>
                       </div>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{p}</span>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               </div>
 

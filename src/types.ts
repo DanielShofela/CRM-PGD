@@ -137,6 +137,13 @@ export interface PlatformSettings {
   siteIconUrl: string;
 }
 
+export interface Category {
+  id: string;
+  name: string; // e.g. "Bronze" or "Gamme Bronze"
+  dailyAmount: string; // e.g. "100 FCFA"
+  image?: string; // Image base64 or URL
+}
+
 export interface Product {
   id: string;
   name: string;
