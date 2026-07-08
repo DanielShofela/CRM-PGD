@@ -245,15 +245,24 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
   });
 
   // Add associated products
-  const productCounts: Record<string, number> = {};
+  const productCounts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
   if (kit.products && Array.isArray(kit.products)) {
     kit.products.forEach(p => {
-      productCounts[p] = (productCounts[p] || 0) + 1;
+      const matched = findProductRobust(p, products);
+      const key = matched ? matched.id : p;
+      if (!productCounts[key]) {
+        productCounts[key] = {
+          product: matched,
+          qty: 0,
+          originalName: p
+        };
+      }
+      productCounts[key].qty += 1;
     });
   }
 
-  Object.entries(productCounts).forEach(([prodName, qty]) => {
-    const matched = findProductRobust(prodName, products);
+  Object.values(productCounts).forEach((item) => {
+    const { product: matched, qty, originalName } = item;
     if (matched) {
       slides.push({
         src: matched.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80",
@@ -270,7 +279,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
         : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=600&q=80";
       slides.push({
         src: fallbackUrl,
-        title: prodName,
+        title: originalName,
         subtitle: "Article inclus",
         isProduct: true,
         quantity: qty
@@ -765,14 +774,23 @@ export const ClientRegistrationView: React.FC = () => {
                           <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
                             <p className="font-bold text-slate-400 uppercase text-[9px] tracking-wider mb-1.5">Inclus dans le pack :</p>
                             {(() => {
-                              const counts: Record<string, number> = {};
+                              const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                               kit.products.forEach(p => {
-                                counts[p] = (counts[p] || 0) + 1;
+                                const matched = findProductRobust(p, products);
+                                const key = matched ? matched.id : p;
+                                if (!counts[key]) {
+                                  counts[key] = {
+                                    product: matched,
+                                    qty: 0,
+                                    originalName: p
+                                  };
+                                }
+                                counts[key].qty += 1;
                               });
-                              const uniqueItems = Object.entries(counts);
-                              return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => {
-                                const matched = findProductRobust(prodName, products);
-                                const displayName = matched ? matched.name : prodName;
+                              const uniqueItems = Object.values(counts);
+                              return uniqueItems.slice(0, 3).map((item, pi) => {
+                                const { product: matched, qty, originalName } = item;
+                                const displayName = matched ? matched.name : originalName;
                                 return (
                                   <div key={pi} className="flex items-center gap-1.5">
                                     <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
@@ -784,9 +802,18 @@ export const ClientRegistrationView: React.FC = () => {
                               });
                             })()}
                             {(() => {
-                              const counts: Record<string, number> = {};
+                              const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                               kit.products.forEach(p => {
-                                counts[p] = (counts[p] || 0) + 1;
+                                const matched = findProductRobust(p, products);
+                                const key = matched ? matched.id : p;
+                                if (!counts[key]) {
+                                  counts[key] = {
+                                    product: matched,
+                                    qty: 0,
+                                    originalName: p
+                                  };
+                                }
+                                counts[key].qty += 1;
                               });
                               const totalUnique = Object.keys(counts).length;
                               return totalUnique > 3 && (
@@ -890,13 +917,22 @@ export const ClientRegistrationView: React.FC = () => {
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Détail des articles inclus :</p>
                 <div className="space-y-2">
                   {(() => {
-                    const counts: Record<string, number> = {};
+                    const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                     activeKit.products.forEach(p => {
-                      counts[p] = (counts[p] || 0) + 1;
+                      const matched = findProductRobust(p, products);
+                      const key = matched ? matched.id : p;
+                      if (!counts[key]) {
+                        counts[key] = {
+                          product: matched,
+                          qty: 0,
+                          originalName: p
+                        };
+                      }
+                      counts[key].qty += 1;
                     });
-                    return Object.entries(counts).map(([prodName, qty], pi) => {
-                      const matchedProduct = findProductRobust(prodName, products);
-                      const displayName = matchedProduct ? matchedProduct.name : prodName;
+                    return Object.values(counts).map((item, pi) => {
+                      const { product: matchedProduct, qty, originalName } = item;
+                      const displayName = matchedProduct ? matchedProduct.name : originalName;
                       const productImg = matchedProduct?.image || (activeKit.categoryId === 'alimentaire' 
                         ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=150&q=80" 
                         : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150&q=80");

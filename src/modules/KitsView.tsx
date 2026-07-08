@@ -953,13 +953,19 @@ export const KitsView: React.FC = () => {
         ? "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=600" 
         : "https://images.unsplash.com/photo-1622737133809-d95047b9e673?w=600";
 
+      // Standardize/canonicalize product names to match the database's latest names exactly
+      const standardizedProducts = kitDefSelectedProducts.map(name => {
+        const matched = findProductRobust(name, products);
+        return matched ? matched.name : name;
+      });
+
       const payload = {
         name: kitDefName,
         categoryId: kitDefCategory,
         dailyAmount: kitDefDaily,
         totalValue: kitDefTotal,
         benefits: parsedBenefits.length > 0 ? parsedBenefits : ['Produits Premium', 'Économie solidaire'],
-        products: kitDefSelectedProducts,
+        products: standardizedProducts,
         deliveryInfo: kitDefDelivery,
         images: [kitDefImage || defaultImg]
       };
@@ -1014,18 +1020,36 @@ export const KitsView: React.FC = () => {
   };
 
   const handleToggleProductSelection = (prodName: string) => {
-    setKitDefSelectedProducts(prev => 
-      prev.includes(prodName) 
-        ? prev.filter(n => n !== prodName) 
-        : [...prev, prodName]
-    );
+    const targetProduct = findProductRobust(prodName, products);
+    setKitDefSelectedProducts(prev => {
+      const isSelected = prev.some(name => {
+        const matched = findProductRobust(name, products);
+        return targetProduct && matched ? matched.id === targetProduct.id : name === prodName;
+      });
+
+      if (isSelected) {
+        return prev.filter(name => {
+          const matched = findProductRobust(name, products);
+          return targetProduct && matched ? matched.id !== targetProduct.id : name !== prodName;
+        });
+      } else {
+        return [...prev, targetProduct ? targetProduct.name : prodName];
+      }
+    });
   };
 
   const setProductQuantity = (prodName: string, qty: number) => {
     const targetQty = Math.max(0, qty);
+    const targetProduct = findProductRobust(prodName, products);
     setKitDefSelectedProducts(prev => {
-      const withoutProduct = prev.filter(name => name !== prodName);
-      const added = Array(targetQty).fill(prodName);
+      const withoutProduct = prev.filter(name => {
+        const matched = findProductRobust(name, products);
+        if (targetProduct && matched) {
+          return matched.id !== targetProduct.id;
+        }
+        return name !== prodName;
+      });
+      const added = Array(targetQty).fill(targetProduct ? targetProduct.name : prodName);
       return [...withoutProduct, ...added];
     });
   };
@@ -1539,18 +1563,27 @@ export const KitsView: React.FC = () => {
                       <div className="space-y-1">
                         <span className="text-[9px] uppercase font-bold text-slate-400 block">Articles inclus :</span>
                         <div className="flex flex-wrap gap-1">
-                          {(() => {
+                           {(() => {
                             // Let's count occurrences to display quantity nicely like "Spaghetti (5)"
-                            const itemCounts: Record<string, number> = {};
+                            const itemCounts: Record<string, { product: Product | undefined; qty: number; originalName: string }> = {};
                             def.products.forEach(p => {
-                              itemCounts[p] = (itemCounts[p] || 0) + 1;
+                              const matched = findProductRobust(p, products);
+                              const key = matched ? matched.id : p;
+                              if (!itemCounts[key]) {
+                                itemCounts[key] = {
+                                  product: matched,
+                                  qty: 0,
+                                  originalName: p
+                                };
+                              }
+                              itemCounts[key].qty += 1;
                             });
-                            return Object.entries(itemCounts).map(([pName, count]) => {
-                              const matched = findProductRobust(pName, products);
-                              const displayName = matched ? matched.name : pName;
+                            return Object.values(itemCounts).map((item, pi) => {
+                              const { product: matched, qty, originalName } = item;
+                              const displayName = matched ? matched.name : originalName;
                               return (
-                                <span key={pName} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] flex items-center gap-1">
-                                  {displayName} {count > 1 && <strong className="text-emerald-600 font-bold">({count})</strong>}
+                                <span key={pi} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] flex items-center gap-1">
+                                  {displayName} {qty > 1 && <strong className="text-emerald-600 font-bold">({qty})</strong>}
                                 </span>
                               );
                             });
@@ -2198,7 +2231,10 @@ export const KitsView: React.FC = () => {
                     }
 
                     return filteredProducts.map(p => {
-                      const count = kitDefSelectedProducts.filter(name => name === p.name).length;
+                      const count = kitDefSelectedProducts.filter(name => {
+                        const matched = findProductRobust(name, products);
+                        return matched ? matched.id === p.id : name === p.name;
+                      }).length;
                       return (
                         <div key={p.id} className="flex items-center justify-between gap-4 py-1.5 border-b border-slate-100/60 dark:border-slate-900/60 last:border-0 hover:bg-slate-100/30 rounded px-1.5">
                           <div className="flex items-center gap-2 flex-grow min-w-0">
