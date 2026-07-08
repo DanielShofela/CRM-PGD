@@ -2025,6 +2025,9 @@ export const KitsView: React.FC = () => {
                   >
                     <option value="alimentaire">Alimentaire</option>
                     <option value="electromenager">Électroménager</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div>

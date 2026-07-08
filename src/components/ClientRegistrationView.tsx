@@ -244,7 +244,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
   };
 
   return (
-    <div className="relative w-[287px] h-[210px] mx-auto rounded-3xl overflow-hidden shadow-lg bg-slate-100 dark:bg-slate-950 flex-shrink-0 group mt-4">
+    <div className="relative w-[287px] h-[210px] mx-auto rounded-none overflow-hidden bg-slate-100 dark:bg-slate-950 flex-shrink-0 group mt-4">
       {/* Scrollable track */}
       <div
         ref={containerRef}
@@ -253,45 +253,41 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {slides.map((slide, i) => (
-          <div key={i} className="w-[287px] h-[210px] flex-shrink-0 snap-start snap-always relative flex items-center justify-center bg-slate-50 dark:bg-slate-950/40">
+          <div key={i} className="w-[287px] h-[210px] flex-shrink-0 snap-start snap-always relative flex items-center justify-center bg-slate-50 dark:bg-slate-950/40 rounded-none">
             <img
               src={slide.src}
               alt={slide.title}
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-contain pointer-events-none rounded-none"
               referrerPolicy="no-referrer"
             />
 
-            {/* Bottom Glassmorphic Card Info */}
-            <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
-              <div className="min-w-0 flex-grow">
-                <p className="text-[10px] font-black text-white truncate leading-tight tracking-tight">
-                  {slide.title}
-                </p>
-                {slide.subtitle && (
-                  <p className="text-[8px] text-slate-300 font-bold uppercase tracking-wider leading-none mt-0.5">
-                    {slide.subtitle}
+            {/* Bottom Glassmorphic Card Info (ONLY for products, NOT for main kit image) */}
+            {slide.isProduct && (
+              <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-none p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
+                <div className="min-w-0 flex-grow">
+                  <p className="text-[10px] font-black text-white truncate leading-tight tracking-tight">
+                    {slide.title}
                   </p>
-                )}
-              </div>
-              <div className="flex-shrink-0">
-                {slide.isProduct ? (
-                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm">
+                  {slide.subtitle && (
+                    <p className="text-[8px] text-slate-300 font-bold uppercase tracking-wider leading-none mt-0.5">
+                      {slide.subtitle}
+                    </p>
+                  )}
+                </div>
+                <div className="flex-shrink-0">
+                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-1 rounded-none shadow-sm">
                     Qté: {slide.quantity}
                   </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm">
-                    Pack
-                  </span>
-                )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ))}
       </div>
 
       {/* Instagram-like index counter */}
       {slides.length > 1 && (
-        <div className="absolute top-3 right-3 px-2 py-0.5 bg-slate-950/60 backdrop-blur-sm rounded-full text-[9px] font-extrabold text-white">
+        <div className="absolute top-3 right-3 px-2 py-0.5 bg-slate-950/60 backdrop-blur-sm rounded-none text-[9px] font-extrabold text-white">
           {activeIndex + 1}/{slides.length}
         </div>
       )}
@@ -302,14 +298,14 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); prevSlide(); }}
-            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-none shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); nextSlide(); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-none shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -318,13 +314,13 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
 
       {/* Slide Indicators Dots */}
       {slides.length > 1 && (
-        <div className="absolute bottom-16 left-0 right-0 flex justify-center gap-1 pointer-events-none">
+        <div className={`absolute ${slides[activeIndex]?.isProduct ? 'bottom-16' : 'bottom-4'} left-0 right-0 flex justify-center gap-1 pointer-events-none transition-all duration-200`}>
           {slides.map((_, i) => (
             <button
               key={i}
               type="button"
               onClick={(e) => { e.stopPropagation(); scrollToSlide(i); }}
-              className={`w-1.5 h-1.5 rounded-full pointer-events-auto transition-all ${
+              className={`w-1.5 h-1.5 rounded-none pointer-events-auto transition-all ${
                 i === activeIndex 
                   ? 'bg-emerald-500 w-3' 
                   : 'bg-white/50 hover:bg-white/80'
@@ -338,10 +334,58 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
 };
 
 export const ClientRegistrationView: React.FC = () => {
-  const { platformSettings, kitDefinitions, addSubscription, addClient, products } = useApp();
+  const { platformSettings, kitDefinitions, addSubscription, addClient, products, categories } = useApp();
   
   // Choose between public kitDefinitions from firestore or static defaults
   const kitsToDisplay = kitDefinitions.length > 0 ? kitDefinitions : DEFAULT_KITS;
+
+  // Group kits by category!
+  // We combine dynamic categories from db plus fallback default categories if needed.
+  const categoriesList = React.useMemo(() => {
+    const list = [...(categories || [])];
+    // Add default categories if they don't exist by name
+    if (!list.some(c => c.name.toLowerCase() === 'alimentaire')) {
+      list.push({ id: 'alimentaire', name: 'Alimentaire', dailyAmount: '100 FCFA' });
+    }
+    if (!list.some(c => c.name.toLowerCase() === 'electromenager' || c.name.toLowerCase() === 'électroménager')) {
+      list.push({ id: 'electromenager', name: 'Électroménager', dailyAmount: '250 FCFA' });
+    }
+    return list;
+  }, [categories]);
+
+  // For each category, filter the kits belonging to it.
+  const groupedKits = React.useMemo(() => {
+    const groups: { category: any; kits: Kit[] }[] = [];
+    
+    categoriesList.forEach(cat => {
+      const catKits = kitsToDisplay.filter(kit => {
+        const kitCat = (kit.categoryId || '').trim().toLowerCase();
+        return kitCat === cat.id.toLowerCase() || kitCat === cat.name.toLowerCase();
+      });
+      
+      if (catKits.length > 0) {
+        groups.push({
+          category: cat,
+          kits: catKits
+        });
+      }
+    });
+
+    // Also gather any kits that didn't match any category in our categoriesList
+    const unmatchedKits = kitsToDisplay.filter(kit => {
+      const kitCat = (kit.categoryId || '').trim().toLowerCase();
+      return !categoriesList.some(cat => kitCat === cat.id.toLowerCase() || kitCat === cat.name.toLowerCase());
+    });
+
+    if (unmatchedKits.length > 0) {
+      groups.push({
+        category: { id: 'autres', name: 'Autres packs', dailyAmount: '' },
+        kits: unmatchedKits
+      });
+    }
+
+    return groups;
+  }, [categoriesList, kitsToDisplay]);
 
   // Selected state
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -603,101 +647,125 @@ export const ClientRegistrationView: React.FC = () => {
           </p>
         </div>
 
-        {/* Kits Bento Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <AnimatePresence mode="popLayout">
-            {filteredKits.map((kit, index) => (
-              <motion.div
-                key={kit.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{ duration: 0.2, delay: index * 0.05 }}
-                className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm overflow-hidden hover:shadow-md dark:hover:border-slate-700/60 transition-all group flex flex-col justify-between"
-              >
-                {/* Kit Image Header (Instagram-swipe style 287x210px) */}
-                <KitImageCarousel kit={kit} products={products} />
-
-                {/* Kit Content */}
-                <div className="p-6 space-y-4 flex-grow flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white tracking-tight">{kit.name}</h3>
-                    
-                    {/* Benefits badges */}
-                    <div className="flex flex-wrap gap-1">
-                      {kit.benefits.slice(0, 2).map((b, bi) => (
-                        <span key={bi} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] font-semibold">
-                          {b}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Products list overview */}
-                    <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
-                      <p className="font-bold text-slate-400 uppercase text-[9px] tracking-wider mb-1.5">Inclus dans le pack :</p>
-                      {(() => {
-                        const counts: Record<string, number> = {};
-                        kit.products.forEach(p => {
-                          counts[p] = (counts[p] || 0) + 1;
-                        });
-                        const uniqueItems = Object.entries(counts);
-                        return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => (
-                          <div key={pi} className="flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                            <span className="truncate">
-                              {prodName} {qty > 1 && <span className="text-emerald-600 font-bold">({qty})</span>}
-                            </span>
-                          </div>
-                        ));
-                      })()}
-                      {(() => {
-                        const counts: Record<string, number> = {};
-                        kit.products.forEach(p => {
-                          counts[p] = (counts[p] || 0) + 1;
-                        });
-                        const totalUnique = Object.keys(counts).length;
-                        return totalUnique > 3 && (
-                          <p className="text-[10px] italic text-emerald-600 font-semibold pl-5">
-                            Et {totalUnique - 3} autre(s) type(s) d'articles...
-                          </p>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  {/* Pricing / CTA */}
-                  <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4 mt-2 space-y-4">
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <span className="block text-[9px] uppercase font-bold text-slate-400">Acompte</span>
-                        <strong className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-display">{kit.dailyAmount}</strong>
-                        <span className="text-[10px] text-slate-400"> / jour</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="block text-[9px] uppercase font-bold text-slate-400 font-sans">Valeur Pack</span>
-                        <strong className="text-sm font-extrabold text-slate-850 dark:text-slate-200 font-display">{kit.totalValue}</strong>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setActiveKit(kit); }}
-                        className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                      >
-                        Détails
-                      </button>
-                      <button
-                        onClick={() => handleOpenSubscribe(kit)}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1"
-                      >
-                        Choisir <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
+        {/* Kits Displayed By Category */}
+        <div className="space-y-16">
+          {groupedKits.map((group, gIndex) => (
+            <div key={group.category.id} className="space-y-6">
+              {/* Category Header */}
+              <div className="border-b border-slate-200/60 dark:border-slate-800/60 pb-3 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+                <div className="space-y-1">
+                  <h2 className="text-2xl font-black font-display text-slate-900 dark:text-white tracking-tight">
+                    {group.category.name}
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Découvrez nos packs exclusifs de la catégorie {group.category.name}.
+                  </p>
                 </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+                {group.category.dailyAmount && (
+                  <span className="text-[11px] font-extrabold uppercase tracking-widest text-emerald-600 bg-emerald-500/5 dark:bg-emerald-500/10 px-3 py-1 rounded-full self-start sm:self-auto">
+                    Acompte : {group.category.dailyAmount.includes('FCFA') ? group.category.dailyAmount : `${group.category.dailyAmount} FCFA / jour`}
+                  </span>
+                )}
+              </div>
+
+              {/* Grid of kits inside this category */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <AnimatePresence mode="popLayout">
+                  {group.kits.map((kit, index) => (
+                    <motion.div
+                      key={kit.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2, delay: index * 0.05 }}
+                      className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm overflow-hidden hover:shadow-md dark:hover:border-slate-700/60 transition-all group flex flex-col justify-between"
+                    >
+                      {/* Kit Image Header (Instagram-swipe style 287x210px) */}
+                      <KitImageCarousel kit={kit} products={products} />
+
+                      {/* Kit Content */}
+                      <div className="p-6 space-y-4 flex-grow flex flex-col justify-between">
+                        <div className="space-y-2">
+                          <h3 className="text-lg font-bold font-display text-slate-900 dark:text-white tracking-tight">{kit.name}</h3>
+                          
+                          {/* Benefits badges */}
+                          <div className="flex flex-wrap gap-1">
+                            {kit.benefits.slice(0, 2).map((b, bi) => (
+                              <span key={bi} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] font-semibold">
+                                {b}
+                              </span>
+                            ))}
+                          </div>
+
+                          {/* Products list overview */}
+                          <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                            <p className="font-bold text-slate-400 uppercase text-[9px] tracking-wider mb-1.5">Inclus dans le pack :</p>
+                            {(() => {
+                              const counts: Record<string, number> = {};
+                              kit.products.forEach(p => {
+                                counts[p] = (counts[p] || 0) + 1;
+                              });
+                              const uniqueItems = Object.entries(counts);
+                              return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => (
+                                <div key={pi} className="flex items-center gap-1.5">
+                                  <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                  <span className="truncate">
+                                    {prodName} {qty > 1 && <span className="text-emerald-600 font-bold">({qty})</span>}
+                                  </span>
+                                </div>
+                              ));
+                            })()}
+                            {(() => {
+                              const counts: Record<string, number> = {};
+                              kit.products.forEach(p => {
+                                counts[p] = (counts[p] || 0) + 1;
+                              });
+                              const totalUnique = Object.keys(counts).length;
+                              return totalUnique > 3 && (
+                                <p className="text-[10px] italic text-emerald-600 font-semibold pl-5 mt-1">
+                                  Et {totalUnique - 3} autre(s) type(s) d'articles...
+                                </p>
+                              );
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* Pricing / CTA */}
+                        <div className="border-t border-slate-100 dark:border-slate-800/80 pt-4 mt-2 space-y-4">
+                          <div className="flex items-end justify-between">
+                            <div>
+                              <span className="block text-[9px] uppercase font-bold text-slate-400">Acompte</span>
+                              <strong className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-display">{kit.dailyAmount}</strong>
+                              <span className="text-[10px] text-slate-400"> / jour</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="block text-[9px] uppercase font-bold text-slate-400 font-sans">Valeur Pack</span>
+                              <strong className="text-sm font-extrabold text-slate-850 dark:text-slate-200 font-display">{kit.totalValue}</strong>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setActiveKit(kit); }}
+                              className="w-full py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                            >
+                              Détails
+                            </button>
+                            <button
+                              onClick={() => handleOpenSubscribe(kit)}
+                              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1"
+                            >
+                              Choisir <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+            </div>
+          ))}
         </div>
       </main>
 
@@ -967,7 +1035,7 @@ export const ClientRegistrationView: React.FC = () => {
                   />
                   {photoDataUrl ? (
                     <div className="flex items-center gap-3">
-                      <img src={photoDataUrl} alt="Aperçu" className="w-12 h-12 rounded-full object-cover border border-emerald-500/30" />
+                      <img src={photoDataUrl} alt="Aperçu" className="w-12 h-12 rounded-none object-cover border-none" />
                       <div className="text-left">
                         <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Photo chargée avec succès</p>
                         <button 
