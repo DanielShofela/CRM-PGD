@@ -152,6 +152,70 @@ interface ProductType {
   image: string;
 }
 
+// Robust product matching helper to prevent issues with slight name modifications, whitespaces, accents or special characters
+function findProductRobust(prodName: string, productsList: ProductType[]): ProductType | undefined {
+  if (!prodName || !productsList || productsList.length === 0) return undefined;
+
+  const cleanName = prodName.trim().toLowerCase();
+
+  // Helper to normalize string (remove accents/diacritics and symbols)
+  const normalize = (str: string) => {
+    return str
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/œ/g, "oe")
+      .replace(/æ/g, "ae")
+      .replace(/['’\-\s]/g, "") // remove spaces, hyphens, and apostrophes for comparison
+      .toLowerCase();
+  };
+
+  const normCleanName = normalize(cleanName);
+
+  // 1. Try exact match (trimmed, case-insensitive)
+  let matched = productsList.find(p => p.name.trim().toLowerCase() === cleanName);
+  if (matched) return matched;
+
+  // 2. Try normalized exact match (ignoring accents, punctuation, spacing)
+  matched = productsList.find(p => normalize(p.name.trim()) === normCleanName);
+  if (matched) return matched;
+
+  // 3. Try partial match (if database product name contains the requested product name or vice versa)
+  matched = productsList.find(p => {
+    const pName = p.name.trim().toLowerCase();
+    return pName.includes(cleanName) || cleanName.includes(pName);
+  });
+  if (matched) return matched;
+
+  // 4. Try partial match on normalized strings
+  matched = productsList.find(p => {
+    const pNorm = normalize(p.name.trim());
+    return pNorm.includes(normCleanName) || normCleanName.includes(pNorm);
+  });
+  if (matched) return matched;
+
+  // 5. Keyword overlap fallback (find product sharing the most words of length > 2)
+  const cleanWords = cleanName.split(/\s+/).filter(w => w.length > 2);
+  if (cleanWords.length > 0) {
+    let bestMatch: ProductType | undefined = undefined;
+    let maxOverlap = 0;
+
+    productsList.forEach(p => {
+      const pWords = p.name.trim().toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const overlap = cleanWords.filter(w => pWords.includes(w)).length;
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        bestMatch = p;
+      }
+    });
+
+    if (maxOverlap > 0) {
+      return bestMatch;
+    }
+  }
+
+  return undefined;
+}
+
 interface KitImageCarouselProps {
   kit: Kit;
   products: ProductType[];
@@ -189,7 +253,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
   }
 
   Object.entries(productCounts).forEach(([prodName, qty]) => {
-    const matched = products.find(p => p.name.toLowerCase() === prodName.toLowerCase());
+    const matched = findProductRobust(prodName, products);
     if (matched) {
       slides.push({
         src: matched.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80",
@@ -827,7 +891,7 @@ export const ClientRegistrationView: React.FC = () => {
                       counts[p] = (counts[p] || 0) + 1;
                     });
                     return Object.entries(counts).map(([prodName, qty], pi) => {
-                      const matchedProduct = products.find(p => p.name.trim().toLowerCase() === prodName.trim().toLowerCase());
+                      const matchedProduct = findProductRobust(prodName, products);
                       const productImg = matchedProduct?.image || (activeKit.categoryId === 'alimentaire' 
                         ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=150&q=80" 
                         : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150&q=80");
