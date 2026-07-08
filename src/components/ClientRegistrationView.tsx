@@ -27,7 +27,9 @@ import {
   Tag,
   Check,
   Zap,
-  ArrowRight
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Client, Attachment, Kit, Subscription } from '../types';
 
@@ -142,8 +144,206 @@ const DEFAULT_KITS: Kit[] = [
   }
 ];
 
+interface ProductType {
+  id: string;
+  name: string;
+  category: string;
+  subcategory?: string;
+  image: string;
+}
+
+interface KitImageCarouselProps {
+  kit: Kit;
+  products: ProductType[];
+}
+
+const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) => {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const slides: {
+    src: string;
+    title: string;
+    subtitle?: string;
+    isProduct: boolean;
+    quantity?: number;
+  }[] = [];
+
+  // Add kit images
+  const kitImages = kit.images && kit.images.length > 0 ? kit.images : ["https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80"];
+  kitImages.forEach((img) => {
+    slides.push({
+      src: img,
+      title: kit.name,
+      subtitle: "Image principale",
+      isProduct: false
+    });
+  });
+
+  // Add associated products
+  const productCounts: Record<string, number> = {};
+  if (kit.products && Array.isArray(kit.products)) {
+    kit.products.forEach(p => {
+      productCounts[p] = (productCounts[p] || 0) + 1;
+    });
+  }
+
+  Object.entries(productCounts).forEach(([prodName, qty]) => {
+    const matched = products.find(p => p.name.toLowerCase() === prodName.toLowerCase());
+    if (matched) {
+      slides.push({
+        src: matched.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80",
+        title: prodName,
+        subtitle: matched.subcategory || "Article inclus",
+        isProduct: true,
+        quantity: qty
+      });
+    } else {
+      // Even if no matched product in database, show with clean fallback
+      const isAlimentary = kit.categoryId === 'alimentaire';
+      const fallbackUrl = isAlimentary 
+        ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80"
+        : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=600&q=80";
+      slides.push({
+        src: fallbackUrl,
+        title: prodName,
+        subtitle: "Article inclus",
+        isProduct: true,
+        quantity: qty
+      });
+    }
+  });
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+    const width = e.currentTarget.clientWidth;
+    if (width > 0) {
+      const index = Math.round(scrollLeft / width);
+      setActiveIndex(index);
+    }
+  };
+
+  const scrollToSlide = (index: number) => {
+    if (containerRef.current) {
+      containerRef.current.scrollTo({
+        left: index * 287,
+        behavior: 'smooth'
+      });
+      setActiveIndex(index);
+    }
+  };
+
+  const nextSlide = () => {
+    const nextIndex = (activeIndex + 1) % slides.length;
+    scrollToSlide(nextIndex);
+  };
+
+  const prevSlide = () => {
+    const prevIndex = (activeIndex - 1 + slides.length) % slides.length;
+    scrollToSlide(prevIndex);
+  };
+
+  return (
+    <div className="relative w-[287px] h-[210px] mx-auto rounded-3xl overflow-hidden shadow-lg border border-slate-150 dark:border-slate-800/80 bg-slate-100 dark:bg-slate-950 flex-shrink-0 group mt-4">
+      {/* Scrollable track */}
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-none select-none scroll-smooth"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {slides.map((slide, i) => (
+          <div key={i} className="w-[287px] h-[210px] flex-shrink-0 snap-start snap-always relative flex items-center justify-center bg-slate-50 dark:bg-slate-950/40">
+            <img
+              src={slide.src}
+              alt={slide.title}
+              className="w-full h-full object-contain pointer-events-none"
+              referrerPolicy="no-referrer"
+            />
+
+            {/* Top Badge (Main / Category) */}
+            <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md rounded-xl text-[8px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider shadow-sm">
+              {slide.isProduct ? 'Composant' : (kit.categoryId === 'alimentaire' ? 'Panier Alimentaire' : 'Électroménager')}
+            </div>
+
+            {/* Bottom Glassmorphic Card Info */}
+            <div className="absolute bottom-3 left-3 right-3 bg-slate-950/75 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl p-2.5 border border-white/10 flex items-center justify-between gap-3 shadow-lg">
+              <div className="min-w-0 flex-grow">
+                <p className="text-[10px] font-black text-white truncate leading-tight tracking-tight">
+                  {slide.title}
+                </p>
+                {slide.subtitle && (
+                  <p className="text-[8px] text-slate-300 font-bold uppercase tracking-wider leading-none mt-0.5">
+                    {slide.subtitle}
+                  </p>
+                )}
+              </div>
+              <div className="flex-shrink-0">
+                {slide.isProduct ? (
+                  <span className="inline-flex items-center gap-1 bg-emerald-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm">
+                    Qté: {slide.quantity}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 bg-amber-500 text-white text-[10px] font-black px-2.5 py-1 rounded-lg shadow-sm">
+                    Pack
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Instagram-like index counter */}
+      {slides.length > 1 && (
+        <div className="absolute top-3 right-3 px-2 py-0.5 bg-slate-950/60 backdrop-blur-sm rounded-full text-[9px] font-extrabold text-white">
+          {activeIndex + 1}/{slides.length}
+        </div>
+      )}
+
+      {/* Desktop chevrons */}
+      {slides.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); prevSlide(); }}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); nextSlide(); }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-300 rounded-full shadow-md border border-slate-100 dark:border-slate-800 opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </>
+      )}
+
+      {/* Slide Indicators Dots */}
+      {slides.length > 1 && (
+        <div className="absolute bottom-16 left-0 right-0 flex justify-center gap-1 pointer-events-none">
+          {slides.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); scrollToSlide(i); }}
+              className={`w-1.5 h-1.5 rounded-full pointer-events-auto transition-all ${
+                i === activeIndex 
+                  ? 'bg-emerald-500 w-3' 
+                  : 'bg-white/50 hover:bg-white/80'
+              }`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const ClientRegistrationView: React.FC = () => {
-  const { platformSettings, kitDefinitions, addSubscription, addClient } = useApp();
+  const { platformSettings, kitDefinitions, addSubscription, addClient, products } = useApp();
   
   // Choose between public kitDefinitions from firestore or static defaults
   const kitsToDisplay = kitDefinitions.length > 0 ? kitDefinitions : DEFAULT_KITS;
@@ -456,18 +656,8 @@ export const ClientRegistrationView: React.FC = () => {
                 transition={{ duration: 0.2, delay: index * 0.05 }}
                 className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/60 shadow-sm overflow-hidden hover:shadow-md dark:hover:border-slate-700/60 transition-all group flex flex-col justify-between"
               >
-                {/* Kit Image Header */}
-                <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
-                  <img 
-                    src={kit.images[0] || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80"} 
-                    alt={kit.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="absolute top-3 left-3 px-2.5 py-1 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md rounded-lg text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-wider shadow-sm">
-                    {kit.categoryId === 'alimentaire' ? 'Alimentaire' : 'Électroménager'}
-                  </div>
-                </div>
+                {/* Kit Image Header (Instagram-swipe style 287x210px) */}
+                <KitImageCarousel kit={kit} products={products} />
 
                 {/* Kit Content */}
                 <div className="p-6 space-y-4 flex-grow flex flex-col justify-between">
@@ -560,12 +750,12 @@ export const ClientRegistrationView: React.FC = () => {
             animate={{ scale: 1, opacity: 1 }}
             className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]"
           >
-            {/* Header image */}
-            <div className="relative aspect-[16/8] bg-slate-100 overflow-hidden flex-shrink-0">
-              <img src={activeKit.images[0]} alt={activeKit.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+            {/* Header image (Swipeable KitImageCarousel) */}
+            <div className="relative flex-shrink-0 flex justify-center bg-slate-50 dark:bg-slate-950/30 p-4 border-b border-slate-100 dark:border-slate-800">
+              <KitImageCarousel kit={activeKit} products={products} />
               <button
                 onClick={() => setActiveKit(null)}
-                className="absolute top-4 right-4 p-2 bg-slate-950/50 hover:bg-slate-950/80 text-white rounded-full backdrop-blur-md cursor-pointer transition-colors"
+                className="absolute top-4 right-4 p-2 bg-slate-950/50 hover:bg-slate-950/80 text-white rounded-full backdrop-blur-md cursor-pointer transition-colors z-10"
               >
                 <X className="w-4 h-4" />
               </button>

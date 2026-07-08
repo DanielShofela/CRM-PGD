@@ -5,7 +5,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
   Filter,
@@ -26,7 +26,8 @@ import {
   Briefcase,
   Share2,
   Link as LinkIcon,
-  UploadCloud
+  UploadCloud,
+  AlertCircle
 } from 'lucide-react';
 import { Client, Attachment } from '../types';
 
@@ -129,6 +130,42 @@ export const ClientsView: React.FC = () => {
   const photoInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Custom Confirmation Dialog and Toast States
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    confirmText: 'Confirmer',
+    cancelText: 'Annuler',
+    isDanger: false
+  });
+
+  const [toast, setToast] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({
+    show: false,
+    message: '',
+    type: 'success'
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast(prev => ({ ...prev, show: false }));
+    }, 4000);
+  };
 
   const handleShareRegisterLink = () => {
     const registerUrl = window.location.origin + window.location.pathname + '?register=true';
@@ -294,11 +331,24 @@ export const ClientsView: React.FC = () => {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Êtes-vous sûr de vouloir supprimer définitivement ce client ?")) {
-      await deleteClient(id);
-      setSelectedClient(null);
-    }
+  const handleDelete = (id: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Supprimer définitivement le client",
+      message: "Êtes-vous sûr de vouloir supprimer définitivement ce client ? Cette action est irréversible.",
+      confirmText: "Oui, supprimer",
+      cancelText: "Annuler",
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await deleteClient(id);
+          setSelectedClient(null);
+          showToast("Client supprimé avec succès !", "success");
+        } catch (err: any) {
+          showToast("Erreur de suppression : " + err.message, "error");
+        }
+      }
+    });
   };
 
   // Récupérer l'historique du client sélectionné
@@ -919,6 +969,100 @@ export const ClientsView: React.FC = () => {
           </motion.div>
         </div>
       )}
+
+      {/* Global Custom Confirm Dialog */}
+      <AnimatePresence>
+        {confirmDialog.isOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+              className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+            />
+            {/* Modal Box */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              className="relative w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-2xl overflow-hidden text-sm"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className={`p-2.5 rounded-2xl flex-shrink-0 ${
+                  confirmDialog.isDanger 
+                    ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400' 
+                    : 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400'
+                }`}>
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div className="space-y-1.5 flex-grow">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-sm tracking-tight font-display">
+                    {confirmDialog.title}
+                  </h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                    {confirmDialog.message}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl text-[10px] cursor-pointer transition-colors"
+                >
+                  {confirmDialog.cancelText || 'Annuler'}
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                    await confirmDialog.onConfirm();
+                  }}
+                  className={`px-4 py-2 text-white font-bold rounded-xl text-[10px] cursor-pointer shadow-md transition-colors ${
+                    confirmDialog.isDanger 
+                      ? 'bg-rose-600 hover:bg-rose-500 shadow-rose-500/15' 
+                      : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/15'
+                  }`}
+                >
+                  {confirmDialog.confirmText || 'Confirmer'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Custom Toast */}
+      <AnimatePresence>
+        {toast.show && (
+          <div className="fixed bottom-6 right-6 z-[110] max-w-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              className={`p-3 rounded-2xl border flex items-center gap-2.5 shadow-xl ${
+                toast.type === 'success'
+                  ? 'bg-emerald-50/95 dark:bg-emerald-950/90 border-emerald-100 dark:border-emerald-900 text-emerald-800 dark:text-emerald-200'
+                  : toast.type === 'error'
+                  ? 'bg-rose-50/95 dark:bg-rose-950/90 border-rose-100 dark:border-rose-900 text-rose-800 dark:text-rose-200'
+                  : 'bg-slate-50/95 dark:bg-slate-950/90 border-slate-150 dark:border-slate-850 text-slate-800 dark:text-slate-200'
+              }`}
+            >
+              <CheckCircle className={`w-4 h-4 flex-shrink-0 ${
+                toast.type === 'success' 
+                  ? 'text-emerald-500' 
+                  : toast.type === 'error'
+                  ? 'text-rose-500' 
+                  : 'text-slate-500'
+              }`} />
+              <p className="text-[10px] font-bold leading-tight">{toast.message}</p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
