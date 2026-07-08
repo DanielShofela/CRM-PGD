@@ -257,7 +257,7 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
     if (matched) {
       slides.push({
         src: matched.image || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80",
-        title: prodName,
+        title: matched.name,
         subtitle: matched.subcategory || "Article inclus",
         isProduct: true,
         quantity: qty
@@ -770,14 +770,18 @@ export const ClientRegistrationView: React.FC = () => {
                                 counts[p] = (counts[p] || 0) + 1;
                               });
                               const uniqueItems = Object.entries(counts);
-                              return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => (
-                                <div key={pi} className="flex items-center gap-1.5">
-                                  <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                  <span className="truncate">
-                                    {prodName} {qty > 1 && <span className="text-emerald-600 font-bold">({qty})</span>}
-                                  </span>
-                                </div>
-                              ));
+                              return uniqueItems.slice(0, 3).map(([prodName, qty], pi) => {
+                                const matched = findProductRobust(prodName, products);
+                                const displayName = matched ? matched.name : prodName;
+                                return (
+                                  <div key={pi} className="flex items-center gap-1.5">
+                                    <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                    <span className="truncate">
+                                      {displayName} {qty > 1 && <span className="text-emerald-600 font-bold">({qty})</span>}
+                                    </span>
+                                  </div>
+                                );
+                              });
                             })()}
                             {(() => {
                               const counts: Record<string, number> = {};
@@ -892,6 +896,7 @@ export const ClientRegistrationView: React.FC = () => {
                     });
                     return Object.entries(counts).map(([prodName, qty], pi) => {
                       const matchedProduct = findProductRobust(prodName, products);
+                      const displayName = matchedProduct ? matchedProduct.name : prodName;
                       const productImg = matchedProduct?.image || (activeKit.categoryId === 'alimentaire' 
                         ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=150&q=80" 
                         : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150&q=80");
@@ -901,12 +906,12 @@ export const ClientRegistrationView: React.FC = () => {
                             <div className="w-10 h-10 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-500/20 rounded-xl overflow-hidden flex items-center justify-center flex-shrink-0">
                               <img 
                                 src={productImg} 
-                                alt={prodName} 
+                                alt={displayName} 
                                 className="w-full h-full object-cover" 
                                 referrerPolicy="no-referrer" 
                               />
                             </div>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{prodName}</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200 text-xs">{displayName}</span>
                           </div>
                           <span className="px-2.5 py-1 bg-slate-200/60 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-black">
                             Qté: {qty}

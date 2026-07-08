@@ -76,6 +76,70 @@ function compressImage(file: File, maxWidth = 500, maxHeight = 500, quality = 0.
   });
 }
 
+// Robust product matching helper to prevent issues with slight name modifications, whitespaces, accents or special characters
+function findProductRobust(prodName: string, productsList: Product[]): Product | undefined {
+  if (!prodName || !productsList || productsList.length === 0) return undefined;
+
+  const cleanName = prodName.trim().toLowerCase();
+
+  // Helper to normalize string (remove accents/diacritics and symbols)
+  const normalize = (str: string) => {
+    return str
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/œ/g, "oe")
+      .replace(/æ/g, "ae")
+      .replace(/['’\-\s]/g, "") // remove spaces, hyphens, and apostrophes for comparison
+      .toLowerCase();
+  };
+
+  const normCleanName = normalize(cleanName);
+
+  // 1. Try exact match (trimmed, case-insensitive)
+  let matched = productsList.find(p => p.name.trim().toLowerCase() === cleanName);
+  if (matched) return matched;
+
+  // 2. Try normalized exact match (ignoring accents, punctuation, spacing)
+  matched = productsList.find(p => normalize(p.name.trim()) === normCleanName);
+  if (matched) return matched;
+
+  // 3. Try partial match (if database product name contains the requested product name or vice versa)
+  matched = productsList.find(p => {
+    const pName = p.name.trim().toLowerCase();
+    return pName.includes(cleanName) || cleanName.includes(pName);
+  });
+  if (matched) return matched;
+
+  // 4. Try partial match on normalized strings
+  matched = productsList.find(p => {
+    const pNorm = normalize(p.name.trim());
+    return pNorm.includes(normCleanName) || normCleanName.includes(pNorm);
+  });
+  if (matched) return matched;
+
+  // 5. Keyword overlap fallback (find product sharing the most words of length > 2)
+  const cleanWords = cleanName.split(/\s+/).filter(w => w.length > 2);
+  if (cleanWords.length > 0) {
+    let bestMatch: Product | undefined = undefined;
+    let maxOverlap = 0;
+
+    productsList.forEach(p => {
+      const pWords = p.name.trim().toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const overlap = cleanWords.filter(w => pWords.includes(w)).length;
+      if (overlap > maxOverlap) {
+        maxOverlap = overlap;
+        bestMatch = p;
+      }
+    });
+
+    if (maxOverlap > 0) {
+      return bestMatch;
+    }
+  }
+
+  return undefined;
+}
+
 // Helper to calculate remaining days to December 15th
 function getRemainingDaysToDecember15(): number {
   const today = new Date();
@@ -1481,11 +1545,15 @@ export const KitsView: React.FC = () => {
                             def.products.forEach(p => {
                               itemCounts[p] = (itemCounts[p] || 0) + 1;
                             });
-                            return Object.entries(itemCounts).map(([pName, count]) => (
-                              <span key={pName} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] flex items-center gap-1">
-                                {pName} {count > 1 && <strong className="text-emerald-600 font-bold">({count})</strong>}
-                              </span>
-                            ));
+                            return Object.entries(itemCounts).map(([pName, count]) => {
+                              const matched = findProductRobust(pName, products);
+                              const displayName = matched ? matched.name : pName;
+                              return (
+                                <span key={pName} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded text-[9px] flex items-center gap-1">
+                                  {displayName} {count > 1 && <strong className="text-emerald-600 font-bold">({count})</strong>}
+                                </span>
+                              );
+                            });
                           })()}
                         </div>
                       </div>
