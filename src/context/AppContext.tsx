@@ -128,6 +128,8 @@ interface AppContextType {
   addSubscription: (sub: Omit<Subscription, 'id' | 'createdAt'>) => Promise<void>;
   updateSubscriptionStatus: (id: string, status: Subscription['status']) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
+  addPlanMessage: (id: string, text: string) => Promise<void>;
+  addSubscriptionMessage: (id: string, text: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -733,6 +735,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
+    const isDuplicate = products.some(p => p.name.trim().toLowerCase() === product.name.trim().toLowerCase());
+    if (isDuplicate) {
+      console.warn(`Product "${product.name}" already exists. Skipping insertion.`);
+      return;
+    }
     await ProductRepository.create(product);
     if (currentUser) {
       await ActivityRepository.log(currentUser.id, currentUser.phone, currentUser.displayName, 'create', `Ajout d'un produit maître : ${product.name}`);
@@ -813,6 +820,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addPlanMessage = async (id: string, text: string) => {
+    if (!currentUser) return;
+    const msg = {
+      id: Math.random().toString(36).substr(2, 9),
+      senderName: currentUser.displayName,
+      senderRole: currentUser.role,
+      text,
+      createdAt: new Date().toISOString()
+    };
+    await KitRepository.addPlanMessage(id, msg);
+    await refreshData();
+  };
+
+  const addSubscriptionMessage = async (id: string, text: string) => {
+    if (!currentUser) return;
+    const msg = {
+      id: Math.random().toString(36).substr(2, 9),
+      senderName: currentUser.displayName,
+      senderRole: currentUser.role,
+      text,
+      createdAt: new Date().toISOString()
+    };
+    await SubscriptionRepository.addSubscriptionMessage(id, msg);
+    await refreshData();
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -882,7 +915,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteKitDefinition,
         addSubscription,
         updateSubscriptionStatus,
-        deleteSubscription
+        deleteSubscription,
+        addPlanMessage,
+        addSubscriptionMessage
       }}
     >
       {children}

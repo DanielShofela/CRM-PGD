@@ -30,7 +30,9 @@ import {
   ArrowRight,
   Bookmark,
   UploadCloud,
-  Search
+  Search,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 import { KitPlan, Product, Kit, Subscription, Client } from '../types';
 
@@ -189,12 +191,26 @@ export const KitsView: React.FC = () => {
     addSubscription,
     updateSubscriptionStatus,
     deleteSubscription,
+    addPlanMessage,
+    addSubscriptionMessage,
     addClient,
-    searchQuery
+    searchQuery,
+    currentUser
   } = useApp();
+
+  const isReadOnly = currentUser?.role === 'agent' || currentUser?.role === 'client' || currentUser?.role === 'lead';
+  const isClient = currentUser?.role === 'client' || currentUser?.role === 'lead';
 
   // Navigation tabs for CRM Panel
   const [activeTab, setActiveTab] = useState<'plans' | 'leads' | 'categories' | 'kits' | 'catalogue' | 'personnaliser'>('categories');
+
+  // Discussions & Conversations states
+  const [selectedPlanForDiscussion, setSelectedPlanForDiscussion] = useState<KitPlan | null>(null);
+  const [selectedSubForDiscussion, setSelectedSubForDiscussion] = useState<Subscription | null>(null);
+  const [newMessageText, setNewMessageText] = useState('');
+
+  const activePlanForDiscussion = selectedPlanForDiscussion ? kits.find(k => k.id === selectedPlanForDiscussion.id) || selectedPlanForDiscussion : null;
+  const activeSubForDiscussion = selectedSubForDiscussion ? subscriptions.find(s => s.id === selectedSubForDiscussion.id) || selectedSubForDiscussion : null;
 
   // Modals visibility
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -605,6 +621,28 @@ export const KitsView: React.FC = () => {
     }
   };
 
+  const handleSendPlanMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessageText.trim() || !selectedPlanForDiscussion) return;
+    try {
+      await addPlanMessage(selectedPlanForDiscussion.id, newMessageText.trim());
+      setNewMessageText('');
+    } catch (err: any) {
+      alert("Erreur lors de l'envoi du message : " + err.message);
+    }
+  };
+
+  const handleSendSubMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessageText.trim() || !selectedSubForDiscussion) return;
+    try {
+      await addSubscriptionMessage(selectedSubForDiscussion.id, newMessageText.trim());
+      setNewMessageText('');
+    } catch (err: any) {
+      alert("Erreur lors de l'envoi du message : " + err.message);
+    }
+  };
+
   const handleOpenPaymentModal = (plan: KitPlan) => {
     setSelectedPlan(plan);
     setPayAmount(plan.price - plan.balance);
@@ -662,6 +700,11 @@ export const KitsView: React.FC = () => {
           image: prodImage || defaultImg
         });
       } else {
+        const isDuplicate = products.some(p => p.name.trim().toLowerCase() === prodName.trim().toLowerCase());
+        if (isDuplicate) {
+          alert(`Erreur : Le produit "${prodName}" existe déjà dans le catalogue.`);
+          return;
+        }
         await addProduct({
           name: prodName,
           category: prodCategory,
@@ -1162,12 +1205,14 @@ export const KitsView: React.FC = () => {
                 <Info className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                 <span>Les abonnements actifs gèrent le solde des paiements journaliers et les livraisons.</span>
               </div>
-              <button
-                onClick={handleOpenRegisterModal}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer inline-flex items-center gap-2 self-start sm:self-auto"
-              >
-                <Plus className="w-4 h-4" /> Nouvel Abonnement Manuel
-              </button>
+              {!isClient && (
+                <button
+                  onClick={handleOpenRegisterModal}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer inline-flex items-center gap-2 self-start sm:self-auto"
+                >
+                  <Plus className="w-4 h-4" /> Nouvel Abonnement Manuel
+                </button>
+              )}
             </div>
 
             {/* In-Line Quick Catalog Cards */}
@@ -1259,8 +1304,11 @@ export const KitsView: React.FC = () => {
                             </td>
                             <td className="p-4 text-center">
                               <button
+                                disabled={isClient}
                                 onClick={() => handleToggleStatus(k)}
-                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-colors cursor-pointer ${
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-colors ${
+                                  isClient ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+                                } ${
                                   k.status === 'active'
                                     ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200'
                                     : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 hover:bg-amber-200'
@@ -1270,13 +1318,23 @@ export const KitsView: React.FC = () => {
                               </button>
                             </td>
                             <td className="p-4 text-right">
-                              <button
-                                onClick={() => handleOpenPaymentModal(k)}
-                                disabled={isFullyPaid}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 rounded-xl font-semibold cursor-pointer inline-flex items-center gap-1 transition-all"
-                              >
-                                <CreditCard className="w-3.5 h-3.5" /> Payer
-                              </button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setSelectedPlanForDiscussion(k)}
+                                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer inline-flex items-center gap-1 transition-all"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" /> Échanges
+                                </button>
+                                {!isClient && (
+                                  <button
+                                    onClick={() => handleOpenPaymentModal(k)}
+                                    disabled={isFullyPaid}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-100 dark:disabled:bg-slate-800 text-white disabled:text-slate-400 rounded-xl font-semibold cursor-pointer inline-flex items-center gap-1 transition-all"
+                                  >
+                                    <CreditCard className="w-3.5 h-3.5" /> Payer
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1349,9 +1407,12 @@ export const KitsView: React.FC = () => {
                           <td className="p-4 text-slate-400">{lead.createdAt ? new Date(lead.createdAt).toLocaleDateString('fr-FR') : "Aujourd'hui"}</td>
                           <td className="p-4 text-center">
                             <select
+                              disabled={isClient}
                               value={lead.status}
                               onChange={(e) => updateSubscriptionStatus(lead.id, e.target.value as any)}
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border-none focus:ring-1 focus:ring-emerald-500 cursor-pointer ${
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-80 ${
+                                isClient ? 'cursor-not-allowed' : 'cursor-pointer'
+                              } ${
                                 lead.status === 'En attente'
                                   ? 'bg-rose-100 text-rose-700'
                                   : lead.status === 'Contacté'
@@ -1366,18 +1427,28 @@ export const KitsView: React.FC = () => {
                           </td>
                           <td className="p-4 text-right space-x-1.5 flex items-center justify-end">
                             <button
-                              onClick={() => handleConvertLead(lead)}
-                              disabled={lead.status === 'Livré'}
-                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-100 dark:disabled:bg-slate-850 text-white disabled:text-slate-400 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1"
+                              onClick={() => setSelectedSubForDiscussion(lead)}
+                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer inline-flex items-center gap-1"
                             >
-                              <UserPlus className="w-3.5 h-3.5" /> Convertir
+                              <MessageSquare className="w-3.5 h-3.5" /> Échanges
                             </button>
-                            <button
-                              onClick={() => deleteSubscription(lead.id)}
-                              className="p-1.5 hover:bg-rose-50 text-rose-500 hover:text-rose-600 rounded-lg cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {!isClient && (
+                              <>
+                                <button
+                                  onClick={() => handleConvertLead(lead)}
+                                  disabled={lead.status === 'Livré'}
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-100 dark:disabled:bg-slate-850 text-white disabled:text-slate-400 rounded-lg font-bold cursor-pointer inline-flex items-center gap-1"
+                                >
+                                  <UserPlus className="w-3.5 h-3.5" /> Convertir
+                                </button>
+                                <button
+                                  onClick={() => deleteSubscription(lead.id)}
+                                  className="p-1.5 hover:bg-rose-50 text-rose-500 hover:text-rose-600 rounded-lg cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -1404,45 +1475,59 @@ export const KitsView: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Gérer Catégories ({categories.length})</h2>
                 <p className="text-xs text-slate-500">Configurez les grandes gammes de kits (ex: Bronze, Silver, Gold, Platinum).</p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedCategory(null);
-                  setCatName('');
-                  setCatDailyAmount('100 FCFA / jour');
-                  setCatImage('');
-                  setIsCategoryModalOpen(true);
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10"
-              >
-                <Plus className="w-4 h-4" /> Nouvelle Catégorie
-              </button>
+              {!isReadOnly ? (
+                <button
+                  onClick={() => {
+                    setSelectedCategory(null);
+                    setCatName('');
+                    setCatDailyAmount('100 FCFA / jour');
+                    setCatImage('');
+                    setIsCategoryModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10"
+                >
+                  <Plus className="w-4 h-4" /> Nouvelle Catégorie
+                </button>
+              ) : (
+                <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-black flex items-center gap-1">
+                  🔒 Lecture seule
+                </span>
+              )}
             </div>
+
+            {isReadOnly && (
+              <div className="p-3 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+                <span>Les agents et les clients disposent d'un accès en lecture seule aux catégories, kits, catalogue et personnalisation.</span>
+              </div>
+            )}
 
             {/* Category Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 pt-2">
               {categories.length === 0 ? (
                 <div className="col-span-full p-12 bg-slate-50 dark:bg-slate-900 border border-slate-200/40 rounded-3xl text-center text-slate-400 text-xs">
-                  Aucune catégorie enregistrée. Cliquez sur "Nouvelle Catégorie" ou initialisez la base depuis l'onglet "Personnaliser".
+                  Aucune catégorie enregistrée. {!isReadOnly && "Cliquez sur 'Nouvelle Catégorie' ou initialisez la base depuis l'onglet 'Personnaliser'."}
                 </div>
               ) : (
                 categories.map(cat => (
                   <div key={cat.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between group relative">
                     <div className="aspect-[4/3] bg-slate-50 relative overflow-hidden">
                       <img src={cat.imageUrl} alt={cat.name} className="w-full h-full object-cover transition-transform group-hover:scale-105" referrerPolicy="no-referrer" />
-                      <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleEditCategory(cat)}
-                          className="p-1.5 bg-white text-slate-700 rounded-lg shadow-md hover:bg-slate-100 cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCategory(cat.id)}
-                          className="p-1.5 bg-white text-rose-600 rounded-lg shadow-md hover:bg-rose-50 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleEditCategory(cat)}
+                            className="p-1.5 bg-white text-slate-700 rounded-lg shadow-md hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(cat.id)}
+                            className="p-1.5 bg-white text-rose-600 rounded-lg shadow-md hover:bg-rose-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="p-4">
                       <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm tracking-tight">{cat.name}</h3>
@@ -1473,26 +1558,38 @@ export const KitsView: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Gérer Kits ({kitDefinitions.length})</h2>
                 <p className="text-xs text-slate-500">Gérez les packs cadeaux configurés et liés à vos catégories.</p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedKitDef(null);
-                  setKitDefName('');
-                  setKitDefBenefits('');
-                  const remainingDays = getRemainingDaysToDecember15();
-                  const defaultTotal = 25000;
-                  const calculatedDaily = Math.round(defaultTotal / remainingDays);
-                  setKitDefTotal(`${new Intl.NumberFormat('fr-FR').format(defaultTotal)} FCFA`);
-                  setKitDefDaily(`${new Intl.NumberFormat('fr-FR').format(calculatedDaily)} FCFA`);
-                  setKitDefCategory(categories[0]?.name || 'Gamme Bronze');
-                  setKitDefSelectedProducts([]);
-                  setKitDefImage('');
-                  setIsKitDefModalOpen(true);
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
-              >
-                <Plus className="w-4 h-4" /> Nouveau Kit
-              </button>
+              {!isReadOnly ? (
+                <button
+                  onClick={() => {
+                    setSelectedKitDef(null);
+                    setKitDefName('');
+                    setKitDefBenefits('');
+                    const remainingDays = getRemainingDaysToDecember15();
+                    const defaultTotal = 25000;
+                    const calculatedDaily = Math.round(defaultTotal / remainingDays);
+                    setKitDefTotal(`${new Intl.NumberFormat('fr-FR').format(defaultTotal)} FCFA`);
+                    setKitDefDaily(`${new Intl.NumberFormat('fr-FR').format(calculatedDaily)} FCFA`);
+                    setKitDefCategory(categories[0]?.name || 'Gamme Bronze');
+                    setKitDefSelectedProducts([]);
+                    setKitDefImage('');
+                    setIsKitDefModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
+                >
+                  <Plus className="w-4 h-4" /> Nouveau Kit
+                </button>
+              ) : (
+                <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-black flex items-center gap-1">
+                  🔒 Lecture seule
+                </span>
+              )}
             </div>
+
+            {isReadOnly && (
+              <div className="p-3 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+                <span>Les agents et les clients disposent d'un accès en lecture seule aux catégories, kits, catalogue et personnalisation.</span>
+              </div>
+            )}
 
             {/* Filter by Category */}
             <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-100 dark:border-slate-900 overflow-x-auto">
@@ -1546,20 +1643,22 @@ export const KitsView: React.FC = () => {
                   <div key={def.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm flex flex-col justify-between">
                     <div className="relative aspect-[16/10] bg-slate-50">
                       <img src={def.images[0]} alt={def.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      <div className="absolute top-3 right-3 flex items-center gap-1.5">
-                        <button
-                          onClick={() => handleEditKitDef(def)}
-                          className="p-1.5 bg-white/90 text-slate-700 rounded-lg shadow-sm hover:bg-slate-100 cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteKitDef(def.id)}
-                          className="p-1.5 bg-white/90 text-rose-600 rounded-lg shadow-sm hover:bg-rose-50 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleEditKitDef(def)}
+                            className="p-1.5 bg-white/90 text-slate-700 rounded-lg shadow-sm hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteKitDef(def.id)}
+                            className="p-1.5 bg-white/90 text-rose-600 rounded-lg shadow-sm hover:bg-rose-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     <div className="p-5 space-y-4">
@@ -1576,7 +1675,8 @@ export const KitsView: React.FC = () => {
                             const itemCounts: Record<string, { product: Product | undefined; qty: number; originalName: string }> = {};
                             def.products.forEach(p => {
                               const matched = findProductRobust(p, products);
-                              const key = matched ? matched.id : p;
+                              const displayName = matched ? matched.name : p;
+                              const key = displayName.trim().toLowerCase();
                               if (!itemCounts[key]) {
                                 itemCounts[key] = {
                                   product: matched,
@@ -1632,20 +1732,32 @@ export const KitsView: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Catalogue Gérant</h2>
                 <p className="text-xs text-slate-500">Gérez les produits servant à composer vos kits ({products.length} produits enregistrés)</p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedProduct(null);
-                  setProdName('');
-                  setProdCategory('Produits alimentaires');
-                  setProdSubcategory('');
-                  setProdImage('');
-                  setIsProductModalOpen(true);
-                }}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
-              >
-                <Plus className="w-4 h-4" /> Nouveau Produit
-              </button>
+              {!isReadOnly ? (
+                <button
+                  onClick={() => {
+                    setSelectedProduct(null);
+                    setProdName('');
+                    setProdCategory('Produits alimentaires');
+                    setProdSubcategory('');
+                    setProdImage('');
+                    setIsProductModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-emerald-500/10 self-start md:self-auto"
+                >
+                  <Plus className="w-4 h-4" /> Nouveau Produit
+                </button>
+              ) : (
+                <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-black flex items-center gap-1">
+                  🔒 Lecture seule
+                </span>
+              )}
             </div>
+
+            {isReadOnly && (
+              <div className="p-3 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+                <span>Les agents et les clients disposent d'un accès en lecture seule aux catégories, kits, catalogue et personnalisation.</span>
+              </div>
+            )}
 
             {/* Search and Filter */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-100 dark:border-slate-900">
@@ -1698,20 +1810,22 @@ export const KitsView: React.FC = () => {
                   <div key={prod.id} className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-3 flex flex-col justify-between relative overflow-hidden group">
                     <div className="relative aspect-square rounded-xl bg-slate-50 overflow-hidden mb-2">
                       <img src={prod.image} alt={prod.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      <div className="absolute top-1 right-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => handleEditProduct(prod)}
-                          className="p-1 bg-white text-slate-700 rounded shadow hover:bg-slate-100 cursor-pointer"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteProduct(prod.id)}
-                          className="p-1 bg-white text-rose-600 rounded shadow hover:bg-rose-50 cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
+                      {!isReadOnly && (
+                        <div className="absolute top-1 right-1 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleEditProduct(prod)}
+                            className="p-1 bg-white text-slate-700 rounded shadow hover:bg-slate-100 cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteProduct(prod.id)}
+                            className="p-1 bg-white text-rose-600 rounded shadow hover:bg-rose-50 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <span className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide block">
@@ -1738,12 +1852,25 @@ export const KitsView: React.FC = () => {
             className="space-y-6"
           >
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm p-6 space-y-6 max-w-2xl">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Personnaliser votre Plateforme</h2>
-                <p className="text-xs text-slate-500">Ajustez l'index d'agencement et gérez l'état global du catalogue de distribution.</p>
+              <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white font-display">Personnaliser votre Plateforme</h2>
+                  <p className="text-xs text-slate-500">Ajustez l'index d'agencement et gérez l'état global du catalogue de distribution.</p>
+                </div>
+                {isReadOnly && (
+                  <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200/30 text-amber-700 dark:text-amber-400 rounded-lg text-xs font-black flex items-center gap-1">
+                    🔒 Lecture seule
+                  </span>
+                )}
               </div>
 
-              <div className="border-t border-slate-100 dark:border-slate-800 pt-4 space-y-4 text-xs">
+              {isReadOnly && (
+                <div className="p-3 bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/30 rounded-xl text-amber-700 dark:text-amber-400 text-xs flex items-center gap-2">
+                  <span>Les agents et les clients disposent d'un accès en lecture seule aux catégories, kits, catalogue et personnalisation.</span>
+                </div>
+              )}
+
+              <div className="pt-4 space-y-4 text-xs">
                 <div className="p-4 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl space-y-3">
                   <h3 className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-emerald-500" />
@@ -1753,8 +1880,13 @@ export const KitsView: React.FC = () => {
                     Vous pouvez écraser toutes vos données de kits, catégories et catalogue actuels pour charger la démo complète de Penta GAD Distribution de <strong>53 produits, 4 catégories de pack (Gamme Bronze, Silver, Gold, Platinum) et 4 kits publics</strong>.
                   </p>
                   <button
+                    disabled={isReadOnly}
                     onClick={handleSeedDefaultCatalog}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-[11px] transition-all cursor-pointer shadow-sm shadow-emerald-500/10"
+                    className={`px-4 py-2 text-white font-bold rounded-xl text-[11px] transition-all cursor-pointer shadow-sm ${
+                      isReadOnly
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed shadow-none'
+                        : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/10'
+                    }`}
                   >
                     Réinitialiser & Charger les 53 Produits Démo
                   </button>
@@ -1766,7 +1898,7 @@ export const KitsView: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Tri par défaut des Packs</label>
-                      <select className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200">
+                      <select disabled={isReadOnly} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200 disabled:opacity-50">
                         <option>Par index d'agencement (Ordre croissant)</option>
                         <option>Par valeur financière (Croissant)</option>
                         <option>Par valeur financière (Décroissant)</option>
@@ -1774,7 +1906,7 @@ export const KitsView: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Affichage du Catalogue Gérant</label>
-                      <select className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200">
+                      <select disabled={isReadOnly} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-800 dark:text-slate-200 disabled:opacity-50">
                         <option>Ordre alphabétique des noms (A-Z)</option>
                         <option>Ajoutés récemment d'abord</option>
                       </select>
@@ -1788,6 +1920,170 @@ export const KitsView: React.FC = () => {
       </AnimatePresence>
 
       {/* 3. MODALS SWITCHER */}
+      {/* DISCUSSION MODAL - ACTIVE PLAN */}
+      {activePlanForDiscussion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[600px]"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 flex-shrink-0">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white font-display text-sm">Fiche Échanges & Discussion</h3>
+                <p className="text-[10px] text-slate-400">
+                  Kit : <strong className="text-slate-600 dark:text-slate-300">{activePlanForDiscussion.kitType}</strong> • Client ID : {activePlanForDiscussion.clientId}
+                </p>
+              </div>
+              <button onClick={() => setSelectedPlanForDiscussion(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Chat Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/50 dark:bg-slate-950/30">
+              {(!activePlanForDiscussion.conversations || activePlanForDiscussion.conversations.length === 0) ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
+                  <MessageSquare className="w-8 h-8 text-slate-300" />
+                  <p className="text-xs">Aucun message d'échange enregistré pour cet abonnement.</p>
+                  <p className="text-[10px] text-slate-400">Les échanges entre l'agent et le service d'administration s'affichent ici.</p>
+                </div>
+              ) : (
+                activePlanForDiscussion.conversations.map((msg) => {
+                  const isOwn = msg.senderName === currentUser?.displayName;
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+                      <div className="text-[9px] text-slate-400 mb-1 px-1 flex items-center gap-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">{msg.senderName}</span>
+                        <span className="px-1 bg-slate-100 dark:bg-slate-800 rounded text-[8px] uppercase">{msg.senderRole}</span>
+                        <span>• {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-4 py-2 text-xs leading-relaxed ${
+                          isOwn
+                            ? 'bg-emerald-600 text-white rounded-tr-none'
+                            : 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer / Input form */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0">
+              {isClient ? (
+                <div className="p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 text-center">
+                  🔒 Vous disposez d'un accès en lecture seule à vos abonnements et conversations. Les gérants s'occupent de la mise à jour de vos données.
+                </div>
+              ) : (
+                <form onSubmit={handleSendPlanMessage} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Saisissez un message à ajouter au fil d'échange..."
+                    value={newMessageText}
+                    onChange={(e) => setNewMessageText(e.target.value)}
+                    className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-xs text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* DISCUSSION MODAL - SUBSCRIPTION/LEAD */}
+      {activeSubForDiscussion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col h-[600px]"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60 flex-shrink-0">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white font-display text-sm">Discussion Prospect / Lead</h3>
+                <p className="text-[10px] text-slate-400">
+                  Prospect : <strong className="text-slate-600 dark:text-slate-300">{activeSubForDiscussion.customerName}</strong> • Kit demandé : {activeSubForDiscussion.kitName}
+                </p>
+              </div>
+              <button onClick={() => setSelectedSubForDiscussion(null)} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Chat Body */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/50 dark:bg-slate-950/30">
+              {(!activeSubForDiscussion.conversations || activeSubForDiscussion.conversations.length === 0) ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
+                  <MessageSquare className="w-8 h-8 text-slate-300" />
+                  <p className="text-xs">Aucun message d'échange avec ce prospect.</p>
+                  <p className="text-[10px] text-slate-400">Ajoutez des notes ou des comptes-rendus d'appels pour suivre l'avancement de la conversion.</p>
+                </div>
+              ) : (
+                activeSubForDiscussion.conversations.map((msg) => {
+                  const isOwn = msg.senderName === currentUser?.displayName;
+                  return (
+                    <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+                      <div className="text-[9px] text-slate-400 mb-1 px-1 flex items-center gap-1">
+                        <span className="font-bold text-slate-600 dark:text-slate-300">{msg.senderName}</span>
+                        <span className="px-1 bg-slate-100 dark:bg-slate-800 rounded text-[8px] uppercase">{msg.senderRole}</span>
+                        <span>• {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <div
+                        className={`max-w-[85%] rounded-2xl px-4 py-2 text-xs leading-relaxed ${
+                          isOwn
+                            ? 'bg-emerald-600 text-white rounded-tr-none'
+                            : 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer / Input form */}
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0">
+              {isClient ? (
+                <div className="p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 text-center">
+                  🔒 Vous disposez d'un accès en lecture seule à vos abonnements et conversations. Les gérants s'occupent de la mise à jour de vos données.
+                </div>
+              ) : (
+                <form onSubmit={handleSendSubMessage} className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Saisissez un commentaire ou message d'échange..."
+                    value={newMessageText}
+                    onChange={(e) => setNewMessageText(e.target.value)}
+                    className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-xs text-slate-900 dark:text-white"
+                  />
+                  <button
+                    type="submit"
+                    className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       {/* A. MANUAL INSCRIPTION KIT PLAN MODAL */}
       {isRegisterModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">

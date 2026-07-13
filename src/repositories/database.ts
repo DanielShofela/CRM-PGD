@@ -316,6 +316,17 @@ export const KitRepository = {
   async updatePlan(id: string, planUpdates: Partial<KitPlan>, author: { id: string, name: string, phone: string }): Promise<void> {
     await updateDoc(doc(db, KITS_COL, id), planUpdates);
     await ActivityRepository.log(author.id, author.phone, author.name, 'update', `Mise à jour du plan kit ID: ${id}`);
+  },
+
+  async addPlanMessage(id: string, message: any): Promise<void> {
+    const docRef = doc(db, KITS_COL, id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const conversations = data.conversations || [];
+      conversations.push(message);
+      await updateDoc(docRef, { conversations });
+    }
   }
 };
 
@@ -621,6 +632,17 @@ export const SubscriptionRepository = {
 
   async delete(id: string): Promise<void> {
     await deleteDoc(doc(db, 'subscriptions', id));
+  },
+
+  async addSubscriptionMessage(id: string, message: any): Promise<void> {
+    const docRef = doc(db, 'subscriptions', id);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      const conversations = data.conversations || [];
+      conversations.push(message);
+      await updateDoc(docRef, { conversations });
+    }
   }
 };
 

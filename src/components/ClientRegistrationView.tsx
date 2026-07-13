@@ -249,7 +249,8 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
   if (kit.products && Array.isArray(kit.products)) {
     kit.products.forEach(p => {
       const matched = findProductRobust(p, products);
-      const key = matched ? matched.id : p;
+      const displayName = matched ? matched.name : p;
+      const key = displayName.trim().toLowerCase();
       if (!productCounts[key]) {
         productCounts[key] = {
           product: matched,
@@ -777,7 +778,8 @@ export const ClientRegistrationView: React.FC = () => {
                               const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                               kit.products.forEach(p => {
                                 const matched = findProductRobust(p, products);
-                                const key = matched ? matched.id : p;
+                                const displayName = matched ? matched.name : p;
+                                const key = displayName.trim().toLowerCase();
                                 if (!counts[key]) {
                                   counts[key] = {
                                     product: matched,
@@ -805,7 +807,8 @@ export const ClientRegistrationView: React.FC = () => {
                               const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                               kit.products.forEach(p => {
                                 const matched = findProductRobust(p, products);
-                                const key = matched ? matched.id : p;
+                                const displayName = matched ? matched.name : p;
+                                const key = displayName.trim().toLowerCase();
                                 if (!counts[key]) {
                                   counts[key] = {
                                     product: matched,
@@ -920,7 +923,8 @@ export const ClientRegistrationView: React.FC = () => {
                     const counts: Record<string, { product: ProductType | undefined; qty: number; originalName: string }> = {};
                     activeKit.products.forEach(p => {
                       const matched = findProductRobust(p, products);
-                      const key = matched ? matched.id : p;
+                      const displayName = matched ? matched.name : p;
+                      const key = displayName.trim().toLowerCase();
                       if (!counts[key]) {
                         counts[key] = {
                           product: matched,

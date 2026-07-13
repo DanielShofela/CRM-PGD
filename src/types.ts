@@ -68,6 +68,7 @@ export interface KitPlan {
   startDate: string;
   endDate: string;
   nextDeliveryDate: string;
+  conversations?: ConversationMessage[];
 }
 
 export interface Delivery {
@@ -164,6 +165,14 @@ export interface Kit {
   deliveryInfo: string;
 }
 
+export interface ConversationMessage {
+  id: string;
+  senderName: string;
+  senderRole: 'agent' | 'client' | 'admin' | 'super_admin';
+  text: string;
+  createdAt: string;
+}
+
 export interface Subscription {
   id: string;
   customerName: string;
@@ -173,5 +182,6 @@ export interface Subscription {
   kitName: string;
   status: 'En attente' | 'Contacté' | 'Livré';
   createdAt: string;
+  conversations?: ConversationMessage[];
 }
 
