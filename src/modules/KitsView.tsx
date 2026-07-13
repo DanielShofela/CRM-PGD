@@ -650,7 +650,7 @@ export const KitsView: React.FC = () => {
     if (!prodName) return;
 
     try {
-      const defaultImg = prodCategory === 'alimentaire' 
+      const defaultImg = (prodCategory === 'alimentaire' || prodCategory === 'Produits alimentaires') 
         ? "https://images.unsplash.com/photo-1542838132-92c53300491e?w=150" 
         : "https://images.unsplash.com/photo-1574269909862-7e1d70bb8078?w=150";
 
@@ -1053,6 +1053,14 @@ export const KitsView: React.FC = () => {
       return [...withoutProduct, ...added];
     });
   };
+
+  const existingProductCategories = Array.from(new Set([
+    'Produits alimentaires',
+    'Articles ménagers',
+    'Électroménager',
+    'Électronique',
+    ...products.map(p => p.category)
+  ].filter(Boolean)));
 
   return (
     <div className="space-y-6 font-sans">
@@ -1628,6 +1636,7 @@ export const KitsView: React.FC = () => {
                 onClick={() => {
                   setSelectedProduct(null);
                   setProdName('');
+                  setProdCategory('Produits alimentaires');
                   setProdSubcategory('');
                   setProdImage('');
                   setIsProductModalOpen(true);
@@ -1972,6 +1981,22 @@ export const KitsView: React.FC = () => {
                   placeholder="Ex: Riz parfumé (Sac de 25kg)"
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Catégorie *</label>
+                <select
+                  required
+                  value={prodCategory}
+                  onChange={(e) => setProdCategory(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white font-medium"
+                >
+                  {existingProductCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
