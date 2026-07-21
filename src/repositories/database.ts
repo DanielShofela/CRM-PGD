@@ -8,6 +8,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -38,6 +39,17 @@ import {
 } from '../types';
 import { hashPassword } from '../utils/crypto';
 
+export function normalizePhone(phone: string): string {
+  if (!phone) return '';
+  let cleaned = phone.replace(/[\s\-\.\(\)]/g, '');
+  if (cleaned.startsWith('+225')) {
+    cleaned = cleaned.substring(4);
+  } else if (cleaned.startsWith('225') && cleaned.length > 10) {
+    cleaned = cleaned.substring(3);
+  }
+  return cleaned;
+}
+
 // Collections Firestore
 const USERS_COL = 'users';
 const CLIENTS_COL = 'clients';
@@ -67,11 +79,35 @@ export const UserRepository = {
   },
 
   async getByPhone(phone: string): Promise<User | null> {
-    const q = query(collection(db, USERS_COL), where('phone', '==', phone));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      return querySnapshot.docs[0].data() as User;
+    const targetNormalized = normalizePhone(phone);
+    if (!targetNormalized) return null;
+
+    // 1. Try exact match from Firestore server
+    const qExact = query(collection(db, USERS_COL), where('phone', '==', phone));
+    const snapExact = await getDocsFromServer(qExact);
+    if (!snapExact.empty) {
+      return snapExact.docs[0].data() as User;
     }
+
+    // Try normalized match from server if different from inputted phone
+    if (phone !== targetNormalized) {
+      const qNorm = query(collection(db, USERS_COL), where('phone', '==', targetNormalized));
+      const snapNorm = await getDocsFromServer(qNorm);
+      if (!snapNorm.empty) {
+        return snapNorm.docs[0].data() as User;
+      }
+    }
+
+    // 2. Fallback scan on the server results to guarantee real verification bypasses any local caching
+    const qAll = query(collection(db, USERS_COL));
+    const snapAll = await getDocsFromServer(qAll);
+    for (const d of snapAll.docs) {
+      const u = d.data() as User;
+      if (normalizePhone(u.phone) === targetNormalized) {
+        return u;
+      }
+    }
+
     return null;
   },
 
@@ -174,11 +210,35 @@ export const ClientRepository = {
   },
 
   async getByPhone(phone: string): Promise<Client | null> {
-    const q = query(collection(db, CLIENTS_COL), where('phone', '==', phone));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      return querySnapshot.docs[0].data() as Client;
+    const targetNormalized = normalizePhone(phone);
+    if (!targetNormalized) return null;
+
+    // 1. Try exact match from Firestore server
+    const qExact = query(collection(db, CLIENTS_COL), where('phone', '==', phone));
+    const snapExact = await getDocsFromServer(qExact);
+    if (!snapExact.empty) {
+      return snapExact.docs[0].data() as Client;
     }
+
+    // Try normalized match from server if different from inputted phone
+    if (phone !== targetNormalized) {
+      const qNorm = query(collection(db, CLIENTS_COL), where('phone', '==', targetNormalized));
+      const snapNorm = await getDocsFromServer(qNorm);
+      if (!snapNorm.empty) {
+        return snapNorm.docs[0].data() as Client;
+      }
+    }
+
+    // 2. Fallback scan on the server results to guarantee real verification bypasses any local caching
+    const qAll = query(collection(db, CLIENTS_COL));
+    const snapAll = await getDocsFromServer(qAll);
+    for (const d of snapAll.docs) {
+      const c = d.data() as Client;
+      if (normalizePhone(c.phone) === targetNormalized) {
+        return c;
+      }
+    }
+
     return null;
   },
 
@@ -254,6 +314,11 @@ export const TontineRepository = {
   async updateGroup(id: string, groupUpdates: Partial<TontineGroup>, author: { id: string, name: string, phone: string }): Promise<void> {
     await updateDoc(doc(db, TONTINE_GROUPS_COL, id), groupUpdates);
     await ActivityRepository.log(author.id, author.phone, author.name, 'update', `Modification du groupe tontine ID: ${id}`);
+  },
+
+  async deleteGroup(id: string, author: { id: string, name: string, phone: string }): Promise<void> {
+    await deleteDoc(doc(db, TONTINE_GROUPS_COL, id));
+    await ActivityRepository.log(author.id, author.phone, author.name, 'delete', `Suppression du groupe de tontine ID: ${id}`);
   },
 
   async getContributionsByGroup(groupId: string): Promise<TontineContribution[]> {

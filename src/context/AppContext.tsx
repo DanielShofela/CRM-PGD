@@ -90,6 +90,7 @@ interface AppContextType {
   deleteClient: (id: string) => Promise<void>;
 
   addTontineGroup: (group: Omit<TontineGroup, 'id' | 'createdAt'>) => Promise<void>;
+  deleteTontineGroup: (id: string) => Promise<void>;
   addContribution: (contribution: Omit<TontineContribution, 'id'>) => Promise<void>;
 
   addKitPlan: (plan: Omit<KitPlan, 'id'>) => Promise<void>;
@@ -603,9 +604,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addClient = async (client: Omit<Client, 'id' | 'createdAt'>, author?: { id: string, name: string, phone: string }) => {
-    const existing = await ClientRepository.getByPhone(client.phone);
-    if (existing) {
-      throw new Error(`Ce numéro de téléphone (${client.phone}) est déjà associé à un autre client.`);
+    const existingClient = await ClientRepository.getByPhone(client.phone);
+    const existingUser = await UserRepository.getByPhone(client.phone);
+    if (existingClient || existingUser) {
+      throw new Error("L'utilisateur est déjà inscrit.");
     }
     const auth = author || (currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined);
     await ClientRepository.create(client, auth);
@@ -614,9 +616,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateClient = async (id: string, updates: Partial<Client>, author?: { id: string, name: string, phone: string }) => {
     if (updates.phone) {
-      const existing = await ClientRepository.getByPhone(updates.phone);
-      if (existing && existing.id !== id) {
-        throw new Error(`Ce numéro de téléphone (${updates.phone}) est déjà utilisé par un autre client.`);
+      const existingClient = await ClientRepository.getByPhone(updates.phone);
+      if (existingClient && existingClient.id !== id) {
+        throw new Error("L'utilisateur est déjà inscrit.");
+      }
+      const existingUser = await UserRepository.getByPhone(updates.phone);
+      if (existingUser) {
+        throw new Error("L'utilisateur est déjà inscrit.");
       }
     }
     const auth = author || (currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined);
@@ -632,6 +638,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // TONTINES ACTIONS
   const addTontineGroup = async (group: Omit<TontineGroup, 'id' | 'createdAt'>) => {
     await TontineRepository.createGroup(group, getAuthor());
+    await refreshData();
+  };
+
+  const deleteTontineGroup = async (id: string) => {
+    await TontineRepository.deleteGroup(id, getAuthor());
     await refreshData();
   };
 
@@ -670,15 +681,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // TEAM MANAGEMENTS
   const addUser = async (user: Omit<User, 'id' | 'createdAt' | 'passwordHash'>, rawPass: string) => {
-    const existing = await UserRepository.getByPhone(user.phone);
-    if (existing) {
-      throw new Error("Ce numéro de téléphone est déjà utilisé par un membre de l'équipe.");
+    const existingUser = await UserRepository.getByPhone(user.phone);
+    const existingClient = await ClientRepository.getByPhone(user.phone);
+    if (existingUser || existingClient) {
+      throw new Error("L'utilisateur est déjà inscrit.");
     }
     await UserRepository.create(user, rawPass);
     await refreshData();
   };
 
   const updateUser = async (id: string, updates: Partial<Omit<User, 'id' | 'passwordHash'>>) => {
+    if (updates.phone) {
+      const existingUser = await UserRepository.getByPhone(updates.phone);
+      if (existingUser && existingUser.id !== id) {
+        throw new Error("L'utilisateur est déjà inscrit.");
+      }
+      const existingClient = await ClientRepository.getByPhone(updates.phone);
+      if (existingClient) {
+        throw new Error("L'utilisateur est déjà inscrit.");
+      }
+    }
     await UserRepository.update(id, updates, getAuthor());
     await refreshData();
   };
@@ -888,6 +910,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateClient,
         deleteClient,
         addTontineGroup,
+        deleteTontineGroup,
         addContribution,
         addKitPlan,
         updateKitPlan,

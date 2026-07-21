@@ -38,15 +38,27 @@ export interface Client {
   attachments?: Attachment[];
 }
 
+export interface TontineMember {
+  clientId: string;
+  articleName: string;
+  totalAmount: number;
+  durationInDays: number;
+  dailyAmount: number;
+  frequency: 'weekly' | 'monthly' | 'bi_monthly' | 'custom';
+  customDays?: number;
+  frequencyAmount: number;
+}
+
 export interface TontineGroup {
   id: string;
   name: string;
-  amount: number; // Cotisation par période (ex: 5 000 FCFA)
-  cycle: 'daily' | 'weekly' | 'monthly';
+  amount: number; // Cotisation par période de référence
+  cycle: 'daily' | 'weekly' | 'monthly' | 'bi_monthly' | 'custom';
   status: 'active' | 'completed' | 'paused';
-  memberIds: string[]; // Liste des IDs des clients participants
-  drawOrder: string[]; // Ordre des IDs clients pour le tirage/bénéficiaire
+  memberIds: string[]; // Liste des IDs des clients participants (gardé pour compatibilité)
+  drawOrder: string[]; // Ordre des IDs clients pour le tirage (gardé pour compatibilité)
   createdAt: string;
+  members?: TontineMember[]; // Paramètres individuels par membre
 }
 
 export interface TontineContribution {

@@ -567,7 +567,11 @@ export const KitsView: React.FC = () => {
         alert(`Client converti et abonnement actif ouvert avec succès pour ${lead.customerName} !`);
       } catch (err: any) {
         console.error(err);
-        alert("Erreur lors de la conversion : " + err.message);
+        if (err.message === "L'utilisateur est déjà inscrit.") {
+          alert(err.message);
+        } else {
+          alert("Erreur lors de la conversion : " + err.message);
+        }
       }
     }
   };

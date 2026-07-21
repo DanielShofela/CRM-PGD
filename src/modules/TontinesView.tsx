@@ -19,9 +19,13 @@ import {
   XCircle,
   FileText,
   DollarSign,
-  UserPlus
+  UserPlus,
+  Trash2,
+  Gift,
+  AlertCircle,
+  Percent
 } from 'lucide-react';
-import { TontineGroup, TontineContribution, Client } from '../types';
+import { TontineGroup, TontineContribution, Client, TontineMember } from '../types';
 
 export const TontinesView: React.FC = () => {
   const {
@@ -29,19 +33,39 @@ export const TontinesView: React.FC = () => {
     clients,
     contributions,
     addTontineGroup,
+    deleteTontineGroup,
     addContribution,
-    searchQuery
+    searchQuery,
+    currentUser
   } = useApp();
+
+  const isAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
 
   const [selectedGroup, setSelectedGroup] = useState<TontineGroup | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
 
+  // Confirmation de suppression d'un groupe
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    groupId: string;
+    groupName: string;
+  }>({
+    isOpen: false,
+    groupId: '',
+    groupName: ''
+  });
+
   // Formulaire de création de groupe
   const [groupName, setGroupName] = useState('');
-  const [groupAmount, setGroupAmount] = useState(5000);
-  const [groupCycle, setGroupCycle] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [membersConfig, setMembersConfig] = useState<Record<string, {
+    articleName: string;
+    totalAmount: number;
+    durationInDays: number;
+    frequency: 'weekly' | 'monthly' | 'bi_monthly' | 'custom';
+    customDays?: number;
+  }>>({});
 
   // Formulaire d'encaissement de cotisation
   const [collectClient, setCollectClient] = useState('');
@@ -55,18 +79,54 @@ export const TontinesView: React.FC = () => {
 
   const handleOpenCreateModal = () => {
     setGroupName('');
-    setGroupAmount(5000);
-    setGroupCycle('weekly');
     setSelectedMembers([]);
+    setMembersConfig({});
     setIsCreateModalOpen(true);
   };
 
   const handleToggleMember = (clientId: string) => {
-    setSelectedMembers(prev =>
-      prev.includes(clientId)
-        ? prev.filter(id => id !== clientId)
-        : [...prev, clientId]
-    );
+    setSelectedMembers(prev => {
+      const exists = prev.includes(clientId);
+      if (exists) {
+        return prev.filter(id => id !== clientId);
+      } else {
+        if (!membersConfig[clientId]) {
+          setMembersConfig(old => ({
+            ...old,
+            [clientId]: {
+              articleName: 'Kit Silver - Alimentaire',
+              totalAmount: 25000,
+              durationInDays: 250,
+              frequency: 'weekly',
+              customDays: 15
+            }
+          }));
+        }
+        return [...prev, clientId];
+      }
+    });
+  };
+
+  const updateMemberConfig = (clientId: string, updates: Partial<{
+    articleName: string;
+    totalAmount: number;
+    durationInDays: number;
+    frequency: 'weekly' | 'monthly' | 'bi_monthly' | 'custom';
+    customDays?: number;
+  }>) => {
+    setMembersConfig(prev => ({
+      ...prev,
+      [clientId]: {
+        ...(prev[clientId] || {
+          articleName: 'Kit Silver - Alimentaire',
+          totalAmount: 25000,
+          durationInDays: 250,
+          frequency: 'weekly',
+          customDays: 15
+        }),
+        ...updates
+      }
+    }));
   };
 
   const handleCreateGroup = async (e: React.FormEvent) => {
@@ -76,32 +136,111 @@ export const TontinesView: React.FC = () => {
       return;
     }
 
-    // Le classement / ordre de tirage initial est simplement l'ordre de sélection
+    const tontineMembers = selectedMembers.map(clientId => {
+      const config = membersConfig[clientId] || {
+        articleName: 'Kit Silver - Alimentaire',
+        totalAmount: 25000,
+        durationInDays: 250,
+        frequency: 'weekly',
+        customDays: 15
+      };
+      const dailyAmount = Math.round(config.totalAmount / config.durationInDays);
+      let multiplier = 7;
+      if (config.frequency === 'monthly') multiplier = 30;
+      else if (config.frequency === 'bi_monthly') multiplier = 15;
+      else if (config.frequency === 'custom') multiplier = config.customDays || 15;
+      const frequencyAmount = dailyAmount * multiplier;
+
+      return {
+        clientId,
+        articleName: config.articleName,
+        totalAmount: config.totalAmount,
+        durationInDays: config.durationInDays,
+        dailyAmount,
+        frequency: config.frequency,
+        customDays: config.customDays,
+        frequencyAmount
+      };
+    });
+
     const drawOrder = [...selectedMembers];
+    const totalGroupAmount = tontineMembers.reduce((sum, m) => sum + m.frequencyAmount, 0);
 
     const newGroup = {
       name: groupName,
-      amount: groupAmount,
-      cycle: groupCycle,
+      amount: totalGroupAmount,
+      cycle: 'custom' as const,
       status: 'active' as const,
       memberIds: selectedMembers,
-      drawOrder: drawOrder
+      drawOrder: drawOrder,
+      members: tontineMembers
     };
 
     try {
       await addTontineGroup(newGroup);
       setIsCreateModalOpen(false);
+      setGroupName('');
+      setSelectedMembers([]);
+      setMembersConfig({});
+      alert("Le groupe de cotisation \"" + groupName + "\" a été créé avec succès !");
     } catch (err: any) {
       alert("Erreur lors de la création du groupe : " + err.message);
     }
   };
 
-  const handleOpenCollectModal = () => {
+  const handleDeleteGroup = () => {
     if (!selectedGroup) return;
-    setCollectClient(selectedGroup.memberIds[0] || '');
-    setCollectAmount(selectedGroup.amount);
+    setDeleteConfirm({
+      isOpen: true,
+      groupId: selectedGroup.id,
+      groupName: selectedGroup.name
+    });
+  };
+
+  const handleDeleteGroupById = (groupId: string, groupName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteConfirm({
+      isOpen: true,
+      groupId: groupId,
+      groupName: groupName
+    });
+  };
+
+  const executeDeleteGroup = async () => {
+    try {
+      await deleteTontineGroup(deleteConfirm.groupId);
+      if (selectedGroup?.id === deleteConfirm.groupId) {
+        setSelectedGroup(null);
+      }
+      const name = deleteConfirm.groupName;
+      setDeleteConfirm({ isOpen: false, groupId: '', groupName: '' });
+      alert("Le groupe de cotisation \"" + name + "\" a été supprimé avec succès !");
+    } catch (err: any) {
+      alert("Erreur lors de la suppression du groupe : " + err.message);
+    }
+  };
+
+  const handleOpenCollectModal = (clientId?: string) => {
+    if (!selectedGroup) return;
+    const targetClient = clientId || selectedGroup.memberIds[0] || '';
+    setCollectClient(targetClient);
+
+    const members = getNormalizedMembers(selectedGroup);
+    const mConfig = members.find(m => m.clientId === targetClient);
+    setCollectAmount(mConfig ? mConfig.frequencyAmount : selectedGroup.amount);
+
     setCollectStatus('paid');
     setIsCollectModalOpen(true);
+  };
+
+  const handleCollectClientChange = (clientId: string) => {
+    setCollectClient(clientId);
+    if (!selectedGroup) return;
+    const members = getNormalizedMembers(selectedGroup);
+    const mConfig = members.find(m => m.clientId === clientId);
+    if (mConfig) {
+      setCollectAmount(mConfig.frequencyAmount);
+    }
   };
 
   const handleCollectContribution = async (e: React.FormEvent) => {
@@ -119,9 +258,50 @@ export const TontinesView: React.FC = () => {
     try {
       await addContribution(newContrib);
       setIsCollectModalOpen(false);
+      alert("Cotisation de " + collectAmount.toLocaleString('fr-FR') + " FCFA enregistrée avec succès !");
     } catch (err: any) {
       alert("Erreur lors de l'enregistrement de la cotisation : " + err.message);
     }
+  };
+
+  const getNormalizedMembers = (group: TontineGroup): TontineMember[] => {
+    if (group.members && Array.isArray(group.members) && group.members.length > 0) {
+      return group.members;
+    }
+    return group.memberIds.map(clientId => {
+      const dailyAmount = Math.round(group.amount / (group.cycle === 'weekly' ? 7 : group.cycle === 'monthly' ? 30 : 1)) || 100;
+      return {
+        clientId,
+        articleName: "Article Général",
+        totalAmount: group.amount * 5,
+        durationInDays: 250,
+        dailyAmount: dailyAmount,
+        frequency: (group.cycle === 'weekly' ? 'weekly' : group.cycle === 'monthly' ? 'monthly' : 'weekly') as any,
+        frequencyAmount: group.amount
+      };
+    });
+  };
+
+  const getMemberProgress = (group: TontineGroup, clientId: string) => {
+    const memberContribs = contributions.filter(c => c.groupId === group.id && c.clientId === clientId && c.status === 'paid');
+    const contributedAmount = memberContribs.reduce((sum, c) => sum + c.amount, 0);
+
+    const members = getNormalizedMembers(group);
+    const mConfig = members.find(m => m.clientId === clientId);
+
+    const totalTarget = mConfig ? mConfig.totalAmount : group.amount;
+    const percent = totalTarget > 0 ? Math.min(100, Math.round((contributedAmount / totalTarget) * 100)) : 0;
+
+    return {
+      contributedAmount,
+      totalTarget,
+      percent,
+      articleName: mConfig?.articleName || "Article Général",
+      dailyAmount: mConfig?.dailyAmount || 100,
+      frequency: mConfig?.frequency || 'weekly',
+      frequencyAmount: mConfig?.frequencyAmount || group.amount,
+      customDays: mConfig?.customDays
+    };
   };
 
   // Récupérer les contributions du groupe sélectionné
@@ -129,15 +309,19 @@ export const TontinesView: React.FC = () => {
     ? contributions.filter(c => c.groupId === selectedGroup.id)
     : [];
 
-  // Calculer la progression globale de la tontine
+  // Calculer la progression globale de la tontine en somme monétaire
   const getProgression = (group: TontineGroup) => {
-    const totalCyclesExpected = group.memberIds.length; // Un cycle complet = chaque membre cotise une fois
-    const actualCollected = contributions.filter(c => c.groupId === group.id && c.status === 'paid').length;
-    const progressPercent = totalCyclesExpected > 0 ? Math.min(100, Math.round((actualCollected / (totalCyclesExpected * totalCyclesExpected)) * 100)) : 0;
+    const members = getNormalizedMembers(group);
+    const totalTargetSum = members.reduce((sum, m) => sum + m.totalAmount, 0);
+    const actualCollected = contributions
+      .filter(c => c.groupId === group.id && c.status === 'paid')
+      .reduce((sum, c) => sum + c.amount, 0);
+
+    const progressPercent = totalTargetSum > 0 ? Math.min(100, Math.round((actualCollected / totalTargetSum) * 100)) : 0;
     return {
       progressPercent,
-      collectedCount: actualCollected,
-      expectedCount: totalCyclesExpected * totalCyclesExpected
+      collectedAmount: actualCollected,
+      targetAmount: totalTargetSum
     };
   };
 
@@ -147,58 +331,70 @@ export const TontinesView: React.FC = () => {
       <div className="lg:col-span-1 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col h-[calc(100vh-160px)]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-bold text-slate-900 dark:text-white font-display text-lg flex items-center gap-2">
-            <PiggyBank className="w-5 h-5 text-emerald-500" /> Groupes de Tontine
+            <PiggyBank className="w-5 h-5 text-emerald-500" /> Groupes de Cotisation
           </h2>
           <button
             onClick={handleOpenCreateModal}
-            className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-sm cursor-pointer flex items-center justify-center"
+            className="p-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl shadow-sm cursor-pointer flex items-center justify-center transition-all"
+            title="Créer un nouveau groupe"
           >
             <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-3">
+        <div className="flex-1 overflow-y-auto space-y-3 pr-1">
           {filteredGroups.length === 0 ? (
             <div className="text-center py-12 text-slate-400 dark:text-slate-500 text-sm">
-              Aucun groupe de tontine.
+              Aucun groupe de cotisation enregistré.
             </div>
           ) : (
             filteredGroups.map(g => {
-              const { progressPercent } = getProgression(g);
+              const { progressPercent, collectedAmount, targetAmount } = getProgression(g);
+              const members = getNormalizedMembers(g);
               return (
                 <div
                   key={g.id}
                   onClick={() => setSelectedGroup(g)}
                   className={`p-4 rounded-2xl border cursor-pointer transition-all ${
                     selectedGroup?.id === g.id
-                      ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/20'
-                      : 'border-slate-200/60 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-950'
+                      ? 'border-emerald-500 bg-emerald-50/25 dark:bg-emerald-950/20'
+                      : 'border-slate-200/60 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-950/40'
                   }`}
                 >
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="flex justify-between items-start mb-2 w-full">
                     <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-sm">{g.name}</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Cycle : {g.cycle === 'weekly' ? 'Hebdomadaire' : g.cycle === 'monthly' ? 'Mensuel' : 'Quotidien'}</p>
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-tight pr-4">{g.name}</h3>
+                      <p className="text-[10px] text-slate-400 mt-1 uppercase font-semibold tracking-wider">
+                        Groupe à articles multiples
+                      </p>
                     </div>
-                    <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
-                      {g.amount.toLocaleString('fr-FR')} F
-                    </span>
+                    <button
+                      onClick={(e) => handleDeleteGroupById(g.id, g.name, e)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer flex-shrink-0"
+                      title="Supprimer définitivement ce groupe"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
-                  {/* Barre de progression de la tontine */}
+                  {/* Barre de progression globale du groupe */}
                   <div className="space-y-1 mt-3">
                     <div className="flex justify-between text-[10px] text-slate-400">
-                      <span>Progression du cycle</span>
+                      <span>Progression globale</span>
                       <span className="font-semibold text-emerald-500">{progressPercent}%</span>
                     </div>
                     <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${progressPercent}%` }}></div>
+                      <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-400 pt-0.5">
+                      <span>{collectedAmount.toLocaleString('fr-FR')} F perçus</span>
+                      <span>Total visé : {targetAmount.toLocaleString('fr-FR')} F</span>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-3.5">
-                    <span className="flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5" /> {g.memberIds.length} participants
+                  <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-3 border-t border-slate-100 dark:border-slate-800/60 pt-2.5">
+                    <span className="flex items-center gap-1 font-medium">
+                      <Users className="w-3.5 h-3.5 text-slate-400" /> {members.length} participants
                     </span>
                   </div>
                 </div>
@@ -217,21 +413,108 @@ export const TontinesView: React.FC = () => {
             className="space-y-6"
           >
             {/* Header / Actions du groupe */}
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white">
                   {selectedGroup.name}
                 </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Cotisation récurrente de <strong className="text-emerald-500">{selectedGroup.amount.toLocaleString('fr-FR')} FCFA</strong>
-                </p>
+                <div className="flex flex-wrap gap-2 items-center mt-2">
+                  <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md font-medium">
+                    Articles multiples
+                  </span>
+                  <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-md font-bold">
+                    Objectif global : {getProgression(selectedGroup).targetAmount.toLocaleString('fr-FR')} FCFA
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={handleOpenCollectModal}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer flex items-center justify-center gap-2"
-              >
-                <DollarSign className="w-4 h-4" /> Encaisser une cotisation
-              </button>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => handleOpenCollectModal()}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer flex items-center justify-center gap-2 transition-all"
+                >
+                  <DollarSign className="w-4 h-4" /> Encaisser
+                </button>
+                <button
+                  onClick={handleDeleteGroup}
+                  className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/40 dark:border-rose-900/40 font-semibold rounded-xl text-xs cursor-pointer flex items-center justify-center gap-2 transition-all"
+                  title="Supprimer ce groupe"
+                >
+                  <Trash2 className="w-4 h-4" /> Supprimer le groupe
+                </button>
+              </div>
+            </div>
+
+            {/* Suivi individuel des participants */}
+            <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
+              <h3 className="font-bold text-slate-900 dark:text-white font-display flex items-center gap-2 text-sm mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                <Percent className="w-4.5 h-4.5 text-emerald-500" /> Suivi Individuel des Cotisations & Progression
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {getNormalizedMembers(selectedGroup).map(member => {
+                  const client = clients.find(c => c.id === member.clientId);
+                  const progress = getMemberProgress(selectedGroup, member.clientId);
+                  const freqLabel = member.frequency === 'weekly' ? 'hebdomadaire' : member.frequency === 'monthly' ? 'mensuelle' : member.frequency === 'bi_monthly' ? 'bi-mensuelle' : `${member.customDays} jours`;
+
+                  return (
+                    <div
+                      key={member.clientId}
+                      className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-850/60 rounded-xl space-y-3 relative group"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-bold text-slate-850 dark:text-slate-150 text-xs">
+                            {client ? `${client.firstName} ${client.lastName}` : "Chargement..."}
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">{client?.phone || "Pas de téléphone"}</p>
+                        </div>
+                        <button
+                          onClick={() => handleOpenCollectModal(member.clientId)}
+                          className="p-1.5 bg-emerald-100 hover:bg-emerald-200 dark:bg-emerald-950/80 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-400 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all"
+                        >
+                          <DollarSign className="w-3 h-3" /> Encaisser
+                        </button>
+                      </div>
+
+                      {/* Info article */}
+                      <div className="flex items-center gap-1.5 p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-800">
+                        <Gift className="w-3.5 h-3.5 text-pink-500 flex-shrink-0" />
+                        <span className="text-[11px] font-medium text-slate-700 dark:text-slate-300 truncate">
+                          {progress.articleName}
+                        </span>
+                      </div>
+
+                      {/* Barre de progression individuelle */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-slate-400">Progression</span>
+                          <span className="font-bold text-emerald-500">{progress.percent}%</span>
+                        </div>
+                        <div className="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 rounded-full transition-all duration-300" style={{ width: `${progress.percent}%` }}></div>
+                        </div>
+                        <div className="flex justify-between text-[10px] font-mono text-slate-400 pt-0.5">
+                          <span>{progress.contributedAmount.toLocaleString('fr-FR')} F</span>
+                          <span>Cible : {progress.totalTarget.toLocaleString('fr-FR')} F</span>
+                        </div>
+                      </div>
+
+                      {/* Plan de cotisation */}
+                      <div className="pt-2 border-t border-slate-200/40 dark:border-slate-800/40 grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                          <span className="text-slate-400 block uppercase tracking-wide text-[8px] font-bold">Base journalière</span>
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">{progress.dailyAmount.toLocaleString('fr-FR')} F / jour</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-slate-400 block uppercase tracking-wide text-[8px] font-bold">Cotisation ({freqLabel})</span>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{progress.frequencyAmount.toLocaleString('fr-FR')} F</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Statistiques Progression / Classement */}
@@ -244,6 +527,8 @@ export const TontinesView: React.FC = () => {
                 <div className="space-y-2.5">
                   {selectedGroup.drawOrder.map((memberId, index) => {
                     const client = clients.find(c => c.id === memberId);
+                    const memberConfig = getNormalizedMembers(selectedGroup).find(m => m.clientId === memberId);
+                    const labelCycle = memberConfig?.frequency === 'weekly' ? `Semaine ${index + 1}` : memberConfig?.frequency === 'monthly' ? `Mois ${index + 1}` : `Période ${index + 1}`;
                     return (
                       <div key={memberId} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900 rounded-xl text-xs">
                         <div className="flex items-center gap-2.5">
@@ -255,7 +540,7 @@ export const TontinesView: React.FC = () => {
                           </span>
                         </div>
                         <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                          {selectedGroup.cycle === 'weekly' ? `Semaine ${index + 1}` : `Mois ${index + 1}`}
+                          {labelCycle}
                         </span>
                       </div>
                     );
@@ -303,8 +588,8 @@ export const TontinesView: React.FC = () => {
         ) : (
           <div className="bg-white dark:bg-slate-900 p-12 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm text-center text-slate-400 dark:text-slate-500">
             <PiggyBank className="w-12 h-12 mx-auto mb-3 opacity-30 text-emerald-500" />
-            <p className="font-semibold text-slate-700 dark:text-slate-300">Aucun groupe de tontine sélectionné</p>
-            <p className="text-xs mt-1">Sélectionnez un groupe dans la colonne latérale pour afficher son classement de tirage, ses participants et collecter les cotisations.</p>
+            <p className="font-semibold text-slate-700 dark:text-slate-300">Aucun groupe de cotisation sélectionné</p>
+            <p className="text-xs mt-1">Sélectionnez un groupe dans la colonne latérale pour afficher les articles de chaque participant, suivre les barres de progression individuelles et encaisser les cotisations.</p>
           </div>
         )}
       </div>
@@ -315,58 +600,34 @@ export const TontinesView: React.FC = () => {
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl overflow-hidden max-h-[90vh] flex flex-col"
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col"
           >
             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/60">
-              <h3 className="font-bold text-slate-900 dark:text-white font-display text-lg">Nouveau groupe de Tontine</h3>
+              <h3 className="font-bold text-slate-900 dark:text-white font-display text-lg">Nouveau groupe à articles personnalisés</h3>
               <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 p-1">
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateGroup} className="p-6 overflow-y-auto space-y-4 text-sm">
+            <form onSubmit={handleCreateGroup} className="p-6 overflow-y-auto space-y-4 text-sm flex-1">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Nom du groupe de Tontine *</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Nom du groupe de donation *</label>
                 <input
                   type="text"
                   required
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  placeholder="Ex: Tontine Hebdo Cotonou / Marcory"
+                  placeholder="Ex: Groupe Cadeaux de Fin d'Année Marcory"
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Montant par période (FCFA)</label>
-                  <input
-                    type="number"
-                    value={groupAmount}
-                    onChange={(e) => setGroupAmount(parseInt(e.target.value) || 0)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Cycle de versement</label>
-                  <select
-                    value={groupCycle}
-                    onChange={(e) => setGroupCycle(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
-                  >
-                    <option value="daily">Quotidien</option>
-                    <option value="weekly">Hebdomadaire</option>
-                    <option value="monthly">Mensuel</option>
-                  </select>
-                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1.5 flex items-center gap-1">
                   <UserPlus className="w-3.5 h-3.5 text-emerald-500" /> Sélectionner les clients participants *
                 </label>
-                <p className="text-[10px] text-slate-400 mb-2">L'ordre de tirage (classement) sera défini selon l'ordre dans lequel vous sélectionnez les participants ci-dessous.</p>
-                <div className="max-h-40 overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-xl p-2.5 divide-y divide-slate-100 dark:divide-slate-800 space-y-1">
+                <p className="text-[10px] text-slate-400 mb-2">Sélectionnez les participants pour pouvoir ensuite définir leurs articles, montants et fréquences.</p>
+                <div className="max-h-40 overflow-y-auto border border-slate-100 dark:border-slate-800 rounded-xl p-2.5 divide-y divide-slate-100 dark:divide-slate-800 space-y-1 bg-slate-50 dark:bg-slate-950">
                   {clients.map(c => (
                     <label key={c.id} className="flex items-center gap-2.5 py-1.5 cursor-pointer text-xs">
                       <input
@@ -381,6 +642,118 @@ export const TontinesView: React.FC = () => {
                 </div>
               </div>
 
+              {/* Configurations spécifiques par membre */}
+              {selectedMembers.length > 0 && (
+                <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <h4 className="font-bold text-slate-700 dark:text-slate-300 text-xs uppercase tracking-wider pb-1 flex items-center gap-1.5">
+                    <Gift className="w-4 h-4 text-pink-500" /> Paramètres d'articles & cotisations individuels
+                  </h4>
+                  <div className="space-y-4 max-h-[250px] overflow-y-auto pr-1">
+                    {selectedMembers.map(clientId => {
+                      const client = clients.find(c => c.id === clientId);
+                      if (!client) return null;
+                      const config = membersConfig[clientId] || {
+                        articleName: 'Kit Silver - Alimentaire',
+                        totalAmount: 25000,
+                        durationInDays: 250,
+                        frequency: 'weekly',
+                        customDays: 15
+                      };
+
+                      const dailyAmount = Math.round(config.totalAmount / config.durationInDays) || 100;
+                      let multiplier = 7;
+                      if (config.frequency === 'monthly') multiplier = 30;
+                      else if (config.frequency === 'bi_monthly') multiplier = 15;
+                      else if (config.frequency === 'custom') multiplier = config.customDays || 15;
+                      const frequencyAmount = dailyAmount * multiplier;
+
+                      return (
+                        <div key={clientId} className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl space-y-3">
+                          <div className="flex justify-between items-center pb-1.5 border-b border-slate-200/60 dark:border-slate-800/60">
+                            <span className="font-bold text-slate-900 dark:text-white text-xs">{client.firstName} {client.lastName}</span>
+                            <span className="text-[10px] text-slate-400">{client.phone}</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Article / Produit</label>
+                              <input
+                                type="text"
+                                required
+                                value={config.articleName}
+                                onChange={(e) => updateMemberConfig(clientId, { articleName: e.target.value })}
+                                placeholder="Ex: Sac de Riz 50kg, Congélateur..."
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Montant Total Fixe (FCFA)</label>
+                              <input
+                                type="number"
+                                required
+                                value={config.totalAmount}
+                                onChange={(e) => updateMemberConfig(clientId, { totalAmount: parseInt(e.target.value) || 0 })}
+                                placeholder="Ex: 25000"
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Durée (jours)</label>
+                              <input
+                                type="number"
+                                required
+                                value={config.durationInDays}
+                                onChange={(e) => updateMemberConfig(clientId, { durationInDays: parseInt(e.target.value) || 250 })}
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Fréquence de versement</label>
+                              <select
+                                value={config.frequency}
+                                onChange={(e) => updateMemberConfig(clientId, { frequency: e.target.value as any })}
+                                className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs focus:outline-none"
+                              >
+                                <option value="weekly">Hebdomadaire (7 jours)</option>
+                                <option value="monthly">Mensuel (30 jours)</option>
+                                <option value="bi_monthly">Bi-mensuel (15 jours)</option>
+                                <option value="custom">Personnalisé (X jours)</option>
+                              </select>
+                            </div>
+
+                            {config.frequency === 'custom' && (
+                              <div className="sm:col-span-2">
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre de jours personnalisés</label>
+                                <input
+                                  type="number"
+                                  required
+                                  min="1"
+                                  value={config.customDays || 15}
+                                  onChange={(e) => updateMemberConfig(clientId, { customDays: parseInt(e.target.value) || 1 })}
+                                  className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-xs"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Affichage des calculs automatiques */}
+                          <div className="p-2.5 bg-emerald-500/10 dark:bg-emerald-500/5 rounded-xl flex justify-between items-center text-[11px] text-emerald-600 dark:text-emerald-400">
+                            <div>
+                              <span className="block text-[9px] uppercase font-bold text-slate-400">Calcul base journalière</span>
+                              <strong className="text-xs font-semibold">{dailyAmount.toLocaleString('fr-FR')} F / jour</strong>
+                            </div>
+                            <div className="text-right">
+                              <span className="block text-[9px] uppercase font-bold text-slate-400">Versement automatique calculé</span>
+                              <strong className="text-xs font-bold">{frequencyAmount.toLocaleString('fr-FR')} F ({config.frequency === 'weekly' ? 'Hebdo' : config.frequency === 'monthly' ? 'Mensuel' : config.frequency === 'bi_monthly' ? 'Bi-mensuel' : `${config.customDays} jours`})</strong>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
@@ -391,7 +764,7 @@ export const TontinesView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md cursor-pointer transition-all"
                 >
                   Créer le groupe
                 </button>
@@ -421,8 +794,8 @@ export const TontinesView: React.FC = () => {
                 <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Sélectionner le participant</label>
                 <select
                   value={collectClient}
-                  onChange={(e) => setCollectClient(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                  onChange={(e) => handleCollectClientChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white focus:ring-1 focus:ring-emerald-500"
                 >
                   {selectedGroup.memberIds.map(mId => {
                     const clientObj = clients.find(c => c.id === mId);
@@ -436,9 +809,10 @@ export const TontinesView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Montant perçu (FCFA)</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Montant perçu (FCFA) *</label>
                 <input
                   type="number"
+                  required
                   value={collectAmount}
                   onChange={(e) => setCollectAmount(parseInt(e.target.value) || 0)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white"
@@ -446,7 +820,7 @@ export const TontinesView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Statut du paiement</label>
+                <label className="block text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Statut du versement</label>
                 <select
                   value={collectStatus}
                   onChange={(e) => setCollectStatus(e.target.value as any)}
@@ -468,9 +842,55 @@ export const TontinesView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md cursor-pointer"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl shadow-md cursor-pointer transition-all"
                 >
                   Confirmer l'encaissement
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 5. MODAL DE CONFIRMATION DE SUPPRESSION */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in duration-200"
+          >
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                executeDeleteGroup();
+              }}
+              className="p-6 text-center space-y-4"
+            >
+              <div className="mx-auto w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-white font-display text-base">
+                  Confirmer la suppression
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                  Êtes-vous sûr de vouloir supprimer définitivement le groupe de cotisation <strong className="text-slate-800 dark:text-slate-200">"{deleteConfirm.groupName}"</strong> ? Tous les paramétrages associés seront perdus de manière irréversible.
+                </p>
+              </div>
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirm({ isOpen: false, groupId: '', groupName: '' })}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold rounded-xl cursor-pointer"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold rounded-xl shadow-md cursor-pointer transition-all"
+                >
+                  Supprimer définitivement
                 </button>
               </div>
             </form>

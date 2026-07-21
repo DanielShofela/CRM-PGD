@@ -107,7 +107,11 @@ export const UsersView: React.FC = () => {
       }
       setIsModalOpen(false);
     } catch (err: any) {
-      alert("Erreur de sauvegarde : " + err.message);
+      if (err.message === "L'utilisateur est déjà inscrit.") {
+        alert(err.message);
+      } else {
+        alert("Erreur de sauvegarde : " + err.message);
+      }
     }
   };
 

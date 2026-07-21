@@ -586,7 +586,11 @@ export const ClientRegistrationView: React.FC = () => {
       setGeneralRegistrationMode(false);
     } catch (err: any) {
       console.error(err);
-      setError("Une erreur s'est produite lors de la transmission : " + err.message);
+      if (err.message === "L'utilisateur est déjà inscrit.") {
+        setError(err.message);
+      } else {
+        setError("Une erreur s'est produite lors de la transmission : " + err.message);
+      }
     } finally {
       setLoading(false);
     }
