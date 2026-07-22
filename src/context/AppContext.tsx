@@ -90,6 +90,7 @@ interface AppContextType {
   deleteClient: (id: string) => Promise<void>;
 
   addTontineGroup: (group: Omit<TontineGroup, 'id' | 'createdAt'>) => Promise<void>;
+  updateTontineGroup: (id: string, updates: Partial<TontineGroup>) => Promise<void>;
   deleteTontineGroup: (id: string) => Promise<void>;
   addContribution: (contribution: Omit<TontineContribution, 'id'>) => Promise<void>;
 
@@ -641,6 +642,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshData();
   };
 
+  const updateTontineGroup = async (id: string, updates: Partial<TontineGroup>) => {
+    await TontineRepository.updateGroup(id, updates, getAuthor());
+    await refreshData();
+  };
+
   const deleteTontineGroup = async (id: string) => {
     await TontineRepository.deleteGroup(id, getAuthor());
     await refreshData();
@@ -910,6 +916,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateClient,
         deleteClient,
         addTontineGroup,
+        updateTontineGroup,
         deleteTontineGroup,
         addContribution,
         addKitPlan,

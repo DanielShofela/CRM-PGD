@@ -23,7 +23,11 @@ import {
   Trash2,
   Gift,
   AlertCircle,
-  Percent
+  Percent,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  X
 } from 'lucide-react';
 import { TontineGroup, TontineContribution, Client, TontineMember } from '../types';
 
@@ -33,6 +37,7 @@ export const TontinesView: React.FC = () => {
     clients,
     contributions,
     addTontineGroup,
+    updateTontineGroup,
     deleteTontineGroup,
     addContribution,
     searchQuery,
@@ -42,8 +47,72 @@ export const TontinesView: React.FC = () => {
   const isAdmin = currentUser?.role === 'super_admin' || currentUser?.role === 'admin';
 
   const [selectedGroup, setSelectedGroup] = useState<TontineGroup | null>(null);
+  const activeGroup = selectedGroup ? (tontines.find(g => g.id === selectedGroup.id) || selectedGroup) : null;
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
+
+  // Édition de l'ordre de tirage
+  const [isEditDrawOrderModalOpen, setIsEditDrawOrderModalOpen] = useState(false);
+  const [editingDrawOrder, setEditingDrawOrder] = useState<string[]>([]);
+  const [savingDrawOrder, setSavingDrawOrder] = useState(false);
+
+  const handleOpenEditDrawOrder = (group: TontineGroup) => {
+    const currentDrawOrder = group.drawOrder && group.drawOrder.length > 0 ? group.drawOrder : group.memberIds;
+    const missing = group.memberIds.filter(id => !currentDrawOrder.includes(id));
+    setEditingDrawOrder([...currentDrawOrder, ...missing]);
+    setIsEditDrawOrderModalOpen(true);
+  };
+
+  const handleMoveUp = (index: number) => {
+    if (index <= 0) return;
+    setEditingDrawOrder(prev => {
+      const next = [...prev];
+      const temp = next[index - 1];
+      next[index - 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index >= editingDrawOrder.length - 1) return;
+    setEditingDrawOrder(prev => {
+      const next = [...prev];
+      const temp = next[index + 1];
+      next[index + 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
+  };
+
+  const handleQuickSwapInline = async (group: TontineGroup, index1: number, index2: number) => {
+    const currentOrder = group.drawOrder && group.drawOrder.length > 0 ? group.drawOrder : group.memberIds;
+    if (index1 < 0 || index2 < 0 || index1 >= currentOrder.length || index2 >= currentOrder.length) return;
+    const newOrder = [...currentOrder];
+    const temp = newOrder[index1];
+    newOrder[index1] = newOrder[index2];
+    newOrder[index2] = temp;
+
+    try {
+      await updateTontineGroup(group.id, { drawOrder: newOrder });
+    } catch (err: any) {
+      alert("Erreur lors de la modification de l'ordre : " + err.message);
+    }
+  };
+
+  const handleSaveDrawOrder = async () => {
+    if (!activeGroup) return;
+    setSavingDrawOrder(true);
+    try {
+      await updateTontineGroup(activeGroup.id, { drawOrder: editingDrawOrder });
+      setIsEditDrawOrderModalOpen(false);
+    } catch (err: any) {
+      alert("Erreur lors de l'enregistrement de l'ordre de tirage : " + err.message);
+    } finally {
+      setSavingDrawOrder(false);
+    }
+  };
 
   // Confirmation de suppression d'un groupe
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -406,7 +475,7 @@ export const TontinesView: React.FC = () => {
 
       {/* 2. Vue détaillée du groupe sélectionné */}
       <div className="lg:col-span-2 space-y-6">
-        {selectedGroup ? (
+        {activeGroup ? (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -416,14 +485,14 @@ export const TontinesView: React.FC = () => {
             <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white">
-                  {selectedGroup.name}
+                  {activeGroup.name}
                 </h2>
                 <div className="flex flex-wrap gap-2 items-center mt-2">
                   <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md font-medium">
                     Articles multiples
                   </span>
                   <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-md font-bold">
-                    Objectif global : {getProgression(selectedGroup).targetAmount.toLocaleString('fr-FR')} FCFA
+                    Objectif global : {getProgression(activeGroup).targetAmount.toLocaleString('fr-FR')} FCFA
                   </span>
                 </div>
               </div>
@@ -452,9 +521,9 @@ export const TontinesView: React.FC = () => {
               </h3>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {getNormalizedMembers(selectedGroup).map(member => {
+                {getNormalizedMembers(activeGroup).map(member => {
                   const client = clients.find(c => c.id === member.clientId);
-                  const progress = getMemberProgress(selectedGroup, member.clientId);
+                  const progress = getMemberProgress(activeGroup, member.clientId);
                   const freqLabel = member.frequency === 'weekly' ? 'hebdomadaire' : member.frequency === 'monthly' ? 'mensuelle' : member.frequency === 'bi_monthly' ? 'bi-mensuelle' : `${member.customDays} jours`;
 
                   return (
@@ -521,27 +590,60 @@ export const TontinesView: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Classement / Ordre de Tirage */}
               <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800/80 shadow-sm">
-                <h3 className="font-bold text-slate-900 dark:text-white font-display flex items-center gap-2 text-sm mb-4">
-                  <Award className="w-4 h-4 text-emerald-500" /> Ordre de tirage (Bénéficiaires)
-                </h3>
+                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100 dark:border-slate-800">
+                  <h3 className="font-bold text-slate-900 dark:text-white font-display flex items-center gap-2 text-sm">
+                    <Award className="w-4 h-4 text-emerald-500" /> Ordre de tirage (Bénéficiaires)
+                  </h3>
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleOpenEditDrawOrder(activeGroup)}
+                      className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/60 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
+                      title="Modifier l'ordre de passage des bénéficiaires"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" /> Modifier
+                    </button>
+                  )}
+                </div>
                 <div className="space-y-2.5">
-                  {selectedGroup.drawOrder.map((memberId, index) => {
+                  {(activeGroup.drawOrder && activeGroup.drawOrder.length > 0 ? activeGroup.drawOrder : activeGroup.memberIds).map((memberId, index, array) => {
                     const client = clients.find(c => c.id === memberId);
-                    const memberConfig = getNormalizedMembers(selectedGroup).find(m => m.clientId === memberId);
+                    const memberConfig = getNormalizedMembers(activeGroup).find(m => m.clientId === memberId);
                     const labelCycle = memberConfig?.frequency === 'weekly' ? `Semaine ${index + 1}` : memberConfig?.frequency === 'monthly' ? `Mois ${index + 1}` : `Période ${index + 1}`;
                     return (
                       <div key={memberId} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-900 rounded-xl text-xs">
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 pr-2">
                           <span className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center text-[10px]">
                             {index + 1}
                           </span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[120px] sm:max-w-[160px]">
                             {client ? `${client.firstName} ${client.lastName}` : "Chargement..."}
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500">
-                          {labelCycle}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                            {labelCycle}
+                          </span>
+                          {isAdmin && (
+                            <div className="flex items-center gap-0.5 border-l border-slate-200 dark:border-slate-800 pl-1.5">
+                              <button
+                                disabled={index === 0}
+                                onClick={() => handleQuickSwapInline(activeGroup, index, index - 1)}
+                                className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                title="Monter dans le tirage"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                disabled={index === array.length - 1}
+                                onClick={() => handleQuickSwapInline(activeGroup, index, index + 1)}
+                                className="p-1 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                                title="Descendre dans le tirage"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -852,7 +954,109 @@ export const TontinesView: React.FC = () => {
         </div>
       )}
 
-      {/* 5. MODAL DE CONFIRMATION DE SUPPRESSION */}
+      {/* 5. MODAL DE MODIFICATION DE L'ORDRE DE TIRAGE */}
+      {isEditDrawOrderModalOpen && activeGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5"
+          >
+            <div className="flex justify-between items-center border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <ArrowUpDown className="w-5 h-5 text-emerald-500" />
+                  Modifier l'Ordre de Tirage
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Groupe : <strong className="text-slate-700 dark:text-slate-200">{activeGroup.name}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditDrawOrderModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 bg-emerald-50/60 dark:bg-emerald-950/30 p-3 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+              Ajustez l'ordre de passage des participants avec les flèches haut/bas. L'ordre défini ci-dessous sera utilisé pour l'attribution des bénéfices.
+            </p>
+
+            <div className="space-y-2 max-h-[350px] overflow-y-auto pr-1">
+              {editingDrawOrder.map((memberId, idx) => {
+                const client = clients.find(c => c.id === memberId);
+                const memberConfig = getNormalizedMembers(activeGroup).find(m => m.clientId === memberId);
+                const labelCycle = memberConfig?.frequency === 'weekly' ? `Semaine ${idx + 1}` : memberConfig?.frequency === 'monthly' ? `Mois ${idx + 1}` : `Période ${idx + 1}`;
+
+                return (
+                  <div
+                    key={memberId}
+                    className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200/80 dark:border-slate-800 rounded-xl text-xs"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 font-bold flex items-center justify-center text-xs">
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                          {client ? `${client.firstName} ${client.lastName}` : "Client inconnu"}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {client?.phone || 'Sans numéro'} • {labelCycle}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => handleMoveUp(idx)}
+                        className="p-1.5 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-sm"
+                        title="Monter"
+                      >
+                        <ArrowUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === editingDrawOrder.length - 1}
+                        onClick={() => handleMoveDown(idx)}
+                        className="p-1.5 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 border border-slate-200 dark:border-slate-800 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-sm"
+                        title="Descendre"
+                      >
+                        <ArrowDown className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 dark:border-slate-800 pt-4">
+              <button
+                type="button"
+                onClick={() => setIsEditDrawOrderModalOpen(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-all"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                disabled={savingDrawOrder}
+                onClick={handleSaveDrawOrder}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-xs shadow-md shadow-emerald-500/10 cursor-pointer flex items-center gap-2 transition-all disabled:opacity-50"
+              >
+                {savingDrawOrder ? "Enregistrement..." : "Sauvegarder l'ordre"}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 6. MODAL DE CONFIRMATION DE SUPPRESSION */}
       {deleteConfirm.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
           <motion.div
