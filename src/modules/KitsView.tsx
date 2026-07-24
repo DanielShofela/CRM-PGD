@@ -202,15 +202,57 @@ export const KitsView: React.FC = () => {
   const isClient = currentUser?.role === 'client' || currentUser?.role === 'lead';
 
   // Navigation tabs for CRM Panel
-  const [activeTab, setActiveTab] = useState<'plans' | 'leads' | 'categories' | 'kits' | 'catalogue' | 'personnaliser'>('categories');
+  const [activeTab, setActiveTab] = useState<'plans' | 'leads' | 'messages' | 'categories' | 'kits' | 'catalogue' | 'personnaliser'>('plans');
 
   // Discussions & Conversations states
   const [selectedPlanForDiscussion, setSelectedPlanForDiscussion] = useState<KitPlan | null>(null);
   const [selectedSubForDiscussion, setSelectedSubForDiscussion] = useState<Subscription | null>(null);
   const [newMessageText, setNewMessageText] = useState('');
+  const [selectedMsgConvId, setSelectedMsgConvId] = useState<string | null>(null);
+  const [hubReplyText, setHubReplyText] = useState('');
 
   const activePlanForDiscussion = selectedPlanForDiscussion ? kits.find(k => k.id === selectedPlanForDiscussion.id) || selectedPlanForDiscussion : null;
   const activeSubForDiscussion = selectedSubForDiscussion ? subscriptions.find(s => s.id === selectedSubForDiscussion.id) || selectedSubForDiscussion : null;
+
+  // Unified Messaging Conversations across Kit Plans & Subscriptions
+  const kitConvs = kits.map(k => {
+    const clientObj = clients.find(c => c.id === k.clientId);
+    const msgs = k.conversations || [];
+    const lastMsg = msgs[msgs.length - 1];
+    return {
+      id: k.id,
+      itemType: 'kit' as const,
+      title: clientObj ? `${clientObj.firstName} ${clientObj.lastName}` : `Client #${k.clientId.substring(0, 6)}`,
+      subtitle: `Abonnement : ${k.kitType}`,
+      phone: clientObj?.phone || '',
+      conversations: msgs,
+      lastMsgText: lastMsg?.text || 'Aucun message pour l\'instant',
+      lastMsgDate: lastMsg?.createdAt || k.startDate,
+      hasClientMsg: msgs.some(m => m.senderRole === 'client' || m.senderRole === 'prospect')
+    };
+  });
+
+  const leadConvs = subscriptions.map(s => {
+    const msgs = s.conversations || [];
+    const lastMsg = msgs[msgs.length - 1];
+    return {
+      id: s.id,
+      itemType: 'lead' as const,
+      title: s.customerName || 'Prospect',
+      subtitle: `Lead : ${s.kitName}`,
+      phone: s.phone || '',
+      conversations: msgs,
+      lastMsgText: lastMsg?.text || 'Nouvelle demande',
+      lastMsgDate: lastMsg?.createdAt || new Date().toISOString(),
+      hasClientMsg: msgs.some(m => m.senderRole === 'client' || m.senderRole === 'prospect')
+    };
+  });
+
+  const allMessagingConvs = [...kitConvs, ...leadConvs].sort(
+    (a, b) => new Date(b.lastMsgDate).getTime() - new Date(a.lastMsgDate).getTime()
+  );
+
+  const totalMessagesCount = allMessagingConvs.reduce((acc, c) => acc + c.conversations.length, 0);
 
   // Modals visibility
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -1156,6 +1198,27 @@ export const KitsView: React.FC = () => {
             )}
           </button>
           <button
+            onClick={() => setActiveTab('messages')}
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer relative flex items-center gap-1.5 ${
+              activeTab === 'messages'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100'
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Centre Messagerie</span>
+            {totalMessagesCount > 0 && (
+              <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full ${
+                activeTab === 'messages' ? 'bg-indigo-800 text-white' : 'bg-indigo-600 text-white'
+              }`}>
+                {totalMessagesCount}
+              </span>
+            )}
+            {allMessagingConvs.some(c => c.hasClientMsg) && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('categories')}
             className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeTab === 'categories'
@@ -1331,9 +1394,18 @@ export const KitsView: React.FC = () => {
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   onClick={() => setSelectedPlanForDiscussion(k)}
-                                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer inline-flex items-center gap-1 transition-all"
+                                  className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold cursor-pointer inline-flex items-center gap-1.5 transition-all relative shadow-sm"
                                 >
-                                  <MessageSquare className="w-3.5 h-3.5" /> Échanges
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>Échanges</span>
+                                  {(k.conversations?.length || 0) > 0 && (
+                                    <span className="px-1.5 py-0.2 bg-indigo-800 text-indigo-100 rounded-full text-[9px] font-black">
+                                      {k.conversations?.length}
+                                    </span>
+                                  )}
+                                  {k.conversations && k.conversations.length > 0 && (k.conversations[k.conversations.length - 1].senderRole === 'client' || k.conversations[k.conversations.length - 1].senderRole === 'prospect') && (
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5"></span>
+                                  )}
                                 </button>
                                 {!isClient && (
                                   <button
@@ -1438,9 +1510,18 @@ export const KitsView: React.FC = () => {
                           <td className="p-4 text-right space-x-1.5 flex items-center justify-end">
                             <button
                               onClick={() => setSelectedSubForDiscussion(lead)}
-                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer inline-flex items-center gap-1"
+                              className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold cursor-pointer inline-flex items-center gap-1.5 relative shadow-sm"
                             >
-                              <MessageSquare className="w-3.5 h-3.5" /> Échanges
+                              <MessageSquare className="w-3.5 h-3.5" />
+                              <span>Échanges</span>
+                              {(lead.conversations?.length || 0) > 0 && (
+                                <span className="px-1.5 py-0.2 bg-indigo-800 text-indigo-100 rounded-full text-[9px] font-black">
+                                  {lead.conversations?.length}
+                                </span>
+                              )}
+                              {lead.conversations && lead.conversations.length > 0 && (lead.conversations[lead.conversations.length - 1].senderRole === 'client' || lead.conversations[lead.conversations.length - 1].senderRole === 'prospect') && (
+                                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping absolute -top-0.5 -right-0.5"></span>
+                              )}
                             </button>
                             {!isClient && (
                               <>
@@ -1466,6 +1547,263 @@ export const KitsView: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* TAB : CENTRE DE MESSAGERIE CLIENTS & LEADS */}
+        {activeTab === 'messages' && (
+          <motion.div
+            key="messages"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="space-y-6"
+          >
+            {/* Header info bar */}
+            <div className="p-6 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-3xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 border border-indigo-800/50">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                    Live CRM Chat
+                  </span>
+                  <span className="text-xs text-indigo-300 font-semibold">• {allMessagingConvs.length} fils de discussion</span>
+                </div>
+                <h2 className="text-xl font-bold font-display">Centre de Messagerie & Support Client</h2>
+                <p className="text-xs text-indigo-200/80 max-w-2xl">
+                  Recevez et répondez instantanément aux messages des clients abonnés et des prospects en ligne. Tous les messages sont synchronisés en temps réel.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="px-3.5 py-2 bg-indigo-950/80 border border-indigo-700/50 rounded-2xl text-center">
+                  <span className="text-xs text-indigo-300 block">Total Messages</span>
+                  <span className="text-lg font-black text-emerald-400">{totalMessagesCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Messaging Hub Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden min-h-[600px]">
+              
+              {/* Left Column: Conversations List */}
+              <div className="lg:col-span-5 border-r border-slate-100 dark:border-slate-800 flex flex-col h-[600px]">
+                <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30">
+                  <h3 className="font-bold text-xs text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-2">
+                    Fils d'Échanges ({allMessagingConvs.length})
+                  </h3>
+                  <p className="text-[11px] text-slate-500">Sélectionnez une discussion pour lire et répondre.</p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {allMessagingConvs.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 space-y-2">
+                      <MessageSquare className="w-8 h-8 mx-auto text-slate-300" />
+                      <p className="text-xs">Aucun message client enregistré.</p>
+                    </div>
+                  ) : (
+                    allMessagingConvs.map((conv) => {
+                      const isSelected = selectedMsgConvId === conv.id || (!selectedMsgConvId && conv === allMessagingConvs[0]);
+                      const lastMsg = conv.conversations[conv.conversations.length - 1];
+                      const isClientSender = lastMsg && (lastMsg.senderRole === 'client' || lastMsg.senderRole === 'prospect');
+
+                      return (
+                        <div
+                          key={conv.id}
+                          onClick={() => setSelectedMsgConvId(conv.id)}
+                          className={`p-4 transition-all cursor-pointer flex items-start gap-3 relative ${
+                            isSelected
+                              ? 'bg-indigo-50/80 dark:bg-indigo-950/30 border-l-4 border-l-indigo-600'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-950/20'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-xs uppercase shrink-0 ${
+                            conv.itemType === 'kit'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                              : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                          }`}>
+                            {conv.title.charAt(0)}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                {conv.title}
+                              </span>
+                              <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                                {new Date(conv.lastMsgDate).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+
+                            <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 truncate mb-1">
+                              {conv.subtitle} {conv.phone && `• ${conv.phone}`}
+                            </p>
+
+                            <p className={`text-[11px] truncate leading-tight ${
+                              isClientSender ? 'font-bold text-slate-900 dark:text-white' : 'text-slate-500'
+                            }`}>
+                              {isClientSender && <span className="text-emerald-600 dark:text-emerald-400 mr-1">💬 Client :</span>}
+                              {conv.lastMsgText}
+                            </p>
+                          </div>
+
+                          {conv.conversations.length > 0 && (
+                            <span className="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full text-[9px] font-bold shrink-0">
+                              {conv.conversations.length}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Chat Window */}
+              <div className="lg:col-span-7 flex flex-col h-[600px] bg-slate-50/50 dark:bg-slate-950/20">
+                {(() => {
+                  const activeConv = allMessagingConvs.find(c => c.id === selectedMsgConvId) || allMessagingConvs[0];
+
+                  if (!activeConv) {
+                    return (
+                      <div className="h-full flex flex-col items-center justify-center p-8 text-center text-slate-400 space-y-3">
+                        <MessageSquare className="w-12 h-12 text-slate-300" />
+                        <h4 className="font-bold text-slate-700 dark:text-slate-300">Aucune discussion sélectionnée</h4>
+                        <p className="text-xs text-slate-400 max-w-sm">
+                          Sélectionnez une discussion dans la colonne de gauche pour afficher l'historique complet et envoyer vos réponses.
+                        </p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      {/* Active Chat Header */}
+                      <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shrink-0">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 dark:text-white text-sm font-display">
+                              {activeConv.title}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${
+                              activeConv.itemType === 'kit'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
+                            }`}>
+                              {activeConv.itemType === 'kit' ? 'Abonnement Kit' : 'Lead Public'}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {activeConv.subtitle} {activeConv.phone && `• Téléphone: ${activeConv.phone}`}
+                          </p>
+                        </div>
+
+                        {activeConv.itemType === 'kit' ? (
+                          <button
+                            onClick={() => {
+                              const kit = kits.find(k => k.id === activeConv.id);
+                              if (kit) setSelectedPlanForDiscussion(kit);
+                            }}
+                            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                          >
+                            Ouvrir Fiche Kit
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const sub = subscriptions.find(s => s.id === activeConv.id);
+                              if (sub) setSelectedSubForDiscussion(sub);
+                            }}
+                            className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                          >
+                            Ouvrir Fiche Lead
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Messages Feed */}
+                      <div className="flex-1 overflow-y-auto p-5 space-y-3.5">
+                        {activeConv.conversations.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-2">
+                            <MessageSquare className="w-8 h-8 text-slate-300" />
+                            <p className="text-xs">Aucun message échangé pour le moment.</p>
+                            <p className="text-[10px] text-slate-400">Écrivez ci-dessous pour initier la conversation avec le client.</p>
+                          </div>
+                        ) : (
+                          activeConv.conversations.map((msg) => {
+                            const isOwn = msg.senderRole !== 'client' && msg.senderRole !== 'prospect';
+                            return (
+                              <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+                                <div className="text-[9px] text-slate-400 mb-1 px-1 flex items-center gap-1">
+                                  <span className="font-bold text-slate-600 dark:text-slate-300">{msg.senderName}</span>
+                                  <span className="px-1 bg-slate-200 dark:bg-slate-800 rounded text-[8px] uppercase font-mono">{msg.senderRole}</span>
+                                  <span>• {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                                <div
+                                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed shadow-sm ${
+                                    isOwn
+                                      ? 'bg-emerald-600 text-white rounded-tr-none'
+                                      : 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none font-medium'
+                                  }`}
+                                >
+                                  {msg.text}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Reply Box */}
+                      <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                        {isClient ? (
+                          <div className="p-2.5 bg-amber-500/5 border border-amber-500/15 rounded-xl text-[10px] text-amber-700 dark:text-amber-400 text-center">
+                            🔒 Mode consultation client actif.
+                          </div>
+                        ) : (
+                          <form
+                            onSubmit={async (e) => {
+                              e.preventDefault();
+                              if (!hubReplyText.trim()) return;
+                              const text = hubReplyText.trim();
+                              setHubReplyText('');
+                              try {
+                                const senderName = currentUser?.displayName || 'Direction Penta GAD';
+                                if (activeConv.itemType === 'kit') {
+                                  await addPlanMessage(activeConv.id, text, { senderName, senderRole: currentUser?.role || 'agent' });
+                                } else {
+                                  await addSubscriptionMessage(activeConv.id, text, { senderName, senderRole: currentUser?.role || 'agent' });
+                                }
+                              } catch (err: any) {
+                                console.error(err);
+                                alert("Erreur lors de l'envoi : " + err.message);
+                              }
+                            }}
+                            className="flex gap-2"
+                          >
+                            <input
+                              type="text"
+                              placeholder={`Répondre à ${activeConv.title}...`}
+                              value={hubReplyText}
+                              onChange={(e) => setHubReplyText(e.target.value)}
+                              className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-xs text-slate-900 dark:text-white font-medium"
+                            />
+                            <button
+                              type="submit"
+                              disabled={!hubReplyText.trim()}
+                              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs transition-all shadow-md cursor-pointer flex items-center gap-1.5 shrink-0"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Envoyer</span>
+                            </button>
+                          </form>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
             </div>
           </motion.div>
         )}

@@ -874,6 +874,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString()
     };
     await KitRepository.addPlanMessage(id, msg);
+
+    if (senderRole === 'client' || senderRole === 'prospect') {
+      await NotificationRepository.send(
+        `💬 Nouveau message client (${senderName})`,
+        `Abonnement Kit #${id.substring(0, 6)} : "${text.length > 70 ? text.substring(0, 70) + '...' : text}"`,
+        'info'
+      );
+    } else {
+      await NotificationRepository.send(
+        `💬 Message de la Direction (${senderName})`,
+        `Abonnement Kit #${id.substring(0, 6)} : "${text.length > 70 ? text.substring(0, 70) + '...' : text}"`,
+        'info'
+      );
+    }
+
     sendPushNotification(`💬 Message de ${senderName}`, text);
     await refreshData();
   };
@@ -889,6 +904,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: new Date().toISOString()
     };
     await SubscriptionRepository.addSubscriptionMessage(id, msg);
+
+    if (senderRole === 'client' || senderRole === 'prospect') {
+      await NotificationRepository.send(
+        `💬 Message Prospect/Lead (${senderName})`,
+        `Lead : "${text.length > 70 ? text.substring(0, 70) + '...' : text}"`,
+        'info'
+      );
+    } else {
+      await NotificationRepository.send(
+        `💬 Message de la Direction (${senderName})`,
+        `Lead : "${text.length > 70 ? text.substring(0, 70) + '...' : text}"`,
+        'info'
+      );
+    }
+
     sendPushNotification(`💬 Message de ${senderName}`, text);
     await refreshData();
   };
