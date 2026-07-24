@@ -17,8 +17,10 @@ import {
   Sun,
   Moon,
   Smartphone,
-  Check
+  Check,
+  Volume2
 } from 'lucide-react';
+import { requestPushPermission, isPushPermissionGranted, playNotificationSound } from '../utils/notifications';
 
 // Dynamic Icon Component
 const DynamicIcon = ({ name, className }: { name: string; className?: string }) => {
@@ -48,6 +50,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   } = useApp();
 
   const [notifMenuOpen, setNotifMenuOpen] = React.useState(false);
+  const [pushActive, setPushActive] = React.useState(isPushPermissionGranted());
+
+  const handleTogglePush = async () => {
+    const res = await requestPushPermission();
+    if (res === 'granted') {
+      setPushActive(true);
+      playNotificationSound();
+    } else {
+      setPushActive(false);
+    }
+  };
 
   // Filtrer les modules autorisés pour le rôle de l'utilisateur connecté
   const userRole = currentUser?.role || 'client';
@@ -208,6 +221,20 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
 
           <div className="flex items-center gap-2.5 md:gap-4 ml-4">
+            {/* WhatsApp style Push Notification Button */}
+            <button
+              onClick={handleTogglePush}
+              title={pushActive ? "Notifications Push & Sonores activées (Style WhatsApp)" : "Activer les notifications Push (Style WhatsApp)"}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                pushActive
+                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                  : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-200 dark:border-amber-800 animate-pulse'
+              }`}
+            >
+              <Bell className={`w-3.5 h-3.5 ${pushActive ? 'text-emerald-600' : 'text-amber-600'}`} />
+              <span className="hidden sm:inline text-[11px]">{pushActive ? "Push Actif 🔔" : "Activer Push 🔔"}</span>
+            </button>
+
             {/* theme toggle quick access */}
             <button
               onClick={toggleTheme}

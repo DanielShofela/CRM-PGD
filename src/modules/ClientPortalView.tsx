@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { Client, TontineGroup, KitPlan, Delivery, Payment, Notification } from '../types';
 import { ClientRegistrationView } from '../components/ClientRegistrationView';
+import { requestPushPermission, isPushPermissionGranted, playNotificationSound } from '../utils/notifications';
 
 // Image Compression Helper pour la photo de profil client
 function compressImage(file: File, maxWidth = 300, maxHeight = 300, quality = 0.7): Promise<string> {
@@ -96,7 +97,9 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
     updateKitPlan,
     markNotificationAsRead,
     markAllNotificationsAsRead,
-    addPlanMessage
+    addPlanMessage,
+    subscriptions,
+    addSubscriptionMessage
   } = useApp();
 
   // Identifier le client connecté ou passé en paramètre d'aperçu
@@ -297,7 +300,11 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
   const handleSendMessage = async (kitId: string) => {
     if (!messageText.trim()) return;
     try {
-      await addPlanMessage(kitId, messageText.trim());
+      const clientName = activeClient ? `${activeClient.firstName} ${activeClient.lastName}` : (currentUser?.displayName || 'Client');
+      await addPlanMessage(kitId, messageText.trim(), {
+        senderName: clientName,
+        senderRole: 'client'
+      });
       setMessageText('');
     } catch (err: any) {
       console.error(err);
@@ -931,7 +938,7 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
                           <div
                             key={msg.id}
                             className={`p-2.5 rounded-xl text-xs max-w-[80%] ${
-                              msg.senderRole === 'client'
+                              msg.senderRole === 'client' || msg.senderRole === 'prospect'
                                 ? 'bg-emerald-600 text-white ml-auto'
                                 : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200/60 dark:border-slate-800'
                             }`}
@@ -1183,6 +1190,33 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
               className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
             >
               Tout marquer comme lu
+            </button>
+          </div>
+
+          {/* Bannière activation Push Notification Style WhatsApp */}
+          <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-emerald-600 text-white rounded-xl">
+                <Bell className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs">Notifications Push instantanées (Style WhatsApp)</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Recevez un signal sonore et une alerte navigateur à chaque message ou paiement.</p>
+              </div>
+            </div>
+            <button
+              onClick={async () => {
+                const res = await requestPushPermission();
+                if (res === 'granted') {
+                  playNotificationSound();
+                  alert("Notifications Push activées avec succès ! Vous recevrez des alertes en temps réel.");
+                } else {
+                  alert("Veuillez autoriser les notifications dans la barre d'adresse de votre navigateur.");
+                }
+              }}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shrink-0 cursor-pointer transition-colors"
+            >
+              Activer Push
             </button>
           </div>
 

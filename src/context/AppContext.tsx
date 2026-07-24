@@ -40,6 +40,7 @@ import {
 } from '../repositories/database';
 import { db } from '../lib/firebase';
 import { onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore';
+import { sendPushNotification } from '../utils/notifications';
 
 interface AppContextType {
   currentUser: User | null;
@@ -132,8 +133,8 @@ interface AppContextType {
   addSubscription: (sub: Omit<Subscription, 'id' | 'createdAt'>) => Promise<void>;
   updateSubscriptionStatus: (id: string, status: Subscription['status']) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
-  addPlanMessage: (id: string, text: string) => Promise<void>;
-  addSubscriptionMessage: (id: string, text: string) => Promise<void>;
+  addPlanMessage: (id: string, text: string, senderOverride?: { senderName: string, senderRole: string }) => Promise<void>;
+  addSubscriptionMessage: (id: string, text: string, senderOverride?: { senderName: string, senderRole: string }) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -862,29 +863,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const addPlanMessage = async (id: string, text: string) => {
-    if (!currentUser) return;
+  const addPlanMessage = async (id: string, text: string, senderOverride?: { senderName: string, senderRole: string }) => {
+    const senderName = senderOverride?.senderName || currentUser?.displayName || 'Client';
+    const senderRole = senderOverride?.senderRole || currentUser?.role || 'client';
     const msg = {
       id: Math.random().toString(36).substr(2, 9),
-      senderName: currentUser.displayName,
-      senderRole: currentUser.role,
+      senderName,
+      senderRole,
       text,
       createdAt: new Date().toISOString()
     };
     await KitRepository.addPlanMessage(id, msg);
+    sendPushNotification(`💬 Message de ${senderName}`, text);
     await refreshData();
   };
 
-  const addSubscriptionMessage = async (id: string, text: string) => {
-    if (!currentUser) return;
+  const addSubscriptionMessage = async (id: string, text: string, senderOverride?: { senderName: string, senderRole: string }) => {
+    const senderName = senderOverride?.senderName || currentUser?.displayName || 'Client';
+    const senderRole = senderOverride?.senderRole || currentUser?.role || 'client';
     const msg = {
       id: Math.random().toString(36).substr(2, 9),
-      senderName: currentUser.displayName,
-      senderRole: currentUser.role,
+      senderName,
+      senderRole,
       text,
       createdAt: new Date().toISOString()
     };
     await SubscriptionRepository.addSubscriptionMessage(id, msg);
+    sendPushNotification(`💬 Message de ${senderName}`, text);
     await refreshData();
   };
 

@@ -629,7 +629,10 @@ export const KitsView: React.FC = () => {
     e.preventDefault();
     if (!newMessageText.trim() || !selectedPlanForDiscussion) return;
     try {
-      await addPlanMessage(selectedPlanForDiscussion.id, newMessageText.trim());
+      await addPlanMessage(selectedPlanForDiscussion.id, newMessageText.trim(), {
+        senderName: currentUser?.displayName || 'Administration',
+        senderRole: currentUser?.role || 'admin'
+      });
       setNewMessageText('');
     } catch (err: any) {
       alert("Erreur lors de l'envoi du message : " + err.message);
@@ -640,7 +643,10 @@ export const KitsView: React.FC = () => {
     e.preventDefault();
     if (!newMessageText.trim() || !selectedSubForDiscussion) return;
     try {
-      await addSubscriptionMessage(selectedSubForDiscussion.id, newMessageText.trim());
+      await addSubscriptionMessage(selectedSubForDiscussion.id, newMessageText.trim(), {
+        senderName: currentUser?.displayName || 'Administration',
+        senderRole: currentUser?.role || 'admin'
+      });
       setNewMessageText('');
     } catch (err: any) {
       alert("Erreur lors de l'envoi du message : " + err.message);
@@ -1955,7 +1961,7 @@ export const KitsView: React.FC = () => {
                 </div>
               ) : (
                 activePlanForDiscussion.conversations.map((msg) => {
-                  const isOwn = msg.senderName === currentUser?.displayName;
+                  const isOwn = msg.senderRole !== 'client' && msg.senderRole !== 'prospect';
                   return (
                     <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
                       <div className="text-[9px] text-slate-400 mb-1 px-1 flex items-center gap-1">
@@ -2037,7 +2043,7 @@ export const KitsView: React.FC = () => {
                 </div>
               ) : (
                 activeSubForDiscussion.conversations.map((msg) => {
-                  const isOwn = msg.senderName === currentUser?.displayName;
+                  const isOwn = msg.senderRole !== 'client' && msg.senderRole !== 'prospect';
                   return (
                     <div key={msg.id} className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
                       <div className="text-[9px] text-slate-400 mb-1 px-1 flex items-center gap-1">
