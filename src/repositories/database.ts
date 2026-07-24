@@ -16,7 +16,8 @@ import {
   where,
   orderBy,
   limit,
-  writeBatch
+  writeBatch,
+  arrayUnion
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
@@ -507,12 +508,19 @@ export const KitRepository = {
 
   async addPlanMessage(id: string, message: any): Promise<void> {
     const docRef = doc(db, KITS_COL, id);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      const conversations = data.conversations || [];
-      conversations.push(message);
-      await updateDoc(docRef, { conversations });
+    try {
+      await updateDoc(docRef, {
+        conversations: arrayUnion(message)
+      });
+    } catch (e) {
+      // Fallback if doc needs conversations initialized
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        const conversations = data.conversations || [];
+        conversations.push(message);
+        await updateDoc(docRef, { conversations });
+      }
     }
   }
 };
@@ -823,12 +831,19 @@ export const SubscriptionRepository = {
 
   async addSubscriptionMessage(id: string, message: any): Promise<void> {
     const docRef = doc(db, 'subscriptions', id);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      const data = snap.data();
-      const conversations = data.conversations || [];
-      conversations.push(message);
-      await updateDoc(docRef, { conversations });
+    try {
+      await updateDoc(docRef, {
+        conversations: arrayUnion(message)
+      });
+    } catch (e) {
+      // Fallback
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        const conversations = data.conversations || [];
+        conversations.push(message);
+        await updateDoc(docRef, { conversations });
+      }
     }
   }
 };

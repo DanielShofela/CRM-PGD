@@ -39,7 +39,8 @@ import {
   Printer,
   Lock,
   ArrowLeft,
-  ExternalLink
+  ExternalLink,
+  MessageSquare
 } from 'lucide-react';
 import { Client, TontineGroup, KitPlan, Delivery, Payment, Notification } from '../types';
 import { ClientRegistrationView } from '../components/ClientRegistrationView';
@@ -109,7 +110,9 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
       : clients.find(c => c.phone === currentUser?.phone) || null
   );
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'kits' | 'tontines' | 'deliveries' | 'notifications'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'kits' | 'messages' | 'tontines' | 'deliveries' | 'notifications'>('dashboard');
+  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [directMessageInput, setDirectMessageInput] = useState<string>('');
 
   // Modal d'accès à l'Espace d'Inscription aux Kits
   const [showRegistrationModal, setShowRegistrationModal] = useState(false);
@@ -219,12 +222,36 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
   // FILTRAGE DES DONNÉES DU CLIENT CONNECTÉ (ZERO-TRUST COMPLIANCE)
   const clientPayments = payments.filter(p => p.clientId === activeClient.id);
   const clientKits = kits.filter(k => k.clientId === activeClient.id);
+  const clientSubscriptions = subscriptions.filter(s => 
+    s.clientId === activeClient.id || 
+    s.phone === activeClient.phone ||
+    (activeClient.phone && s.phone && s.phone.endsWith(activeClient.phone.slice(-8)))
+  );
   const clientTontines = tontines.filter(t => 
     (t.memberIds && t.memberIds.includes(activeClient.id)) ||
     (t.members && t.members.some(m => m.clientId === activeClient.id))
   );
   const clientContributions = contributions.filter(c => c.clientId === activeClient.id);
   const clientDeliveries = deliveries.filter(d => d.clientId === activeClient.id);
+
+  const clientMessagingThreads = [
+    ...clientKits.map(k => ({
+      id: k.id,
+      title: `Kit ${k.kitType}`,
+      subTitle: `Dossier #${k.id.substring(0, 6)} • Statut: ${k.status}`,
+      type: 'kit' as const,
+      conversations: k.conversations || []
+    })),
+    ...clientSubscriptions.map(s => ({
+      id: s.id,
+      title: `Demande ${s.kitName}`,
+      subTitle: `Réf #${s.id.substring(0, 6)} • Statut: ${s.status}`,
+      type: 'lead' as const,
+      conversations: s.conversations || []
+    }))
+  ];
+
+  const totalClientMessagesCount = clientMessagingThreads.reduce((acc, t) => acc + t.conversations.length, 0);
 
   // NOTIFICATIONS EXCLUSIVES CLIENTS : Uniquement celles ciblées spécifiquement à ce client ou avec le rôle 'client'
   const clientNotifications = notifications.filter(n => 
@@ -311,6 +338,28 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
     }
   };
 
+  // SOUMISSION MESSAGE DIRECT DANS LE TCHAT DU PORTAIL CLIENT
+  const handleSendDirectMessage = async (threadId: string, threadType: 'kit' | 'lead') => {
+    if (!directMessageInput.trim()) return;
+    try {
+      const clientName = activeClient ? `${activeClient.firstName} ${activeClient.lastName}` : (currentUser?.displayName || 'Client');
+      if (threadType === 'kit') {
+        await addPlanMessage(threadId, directMessageInput.trim(), {
+          senderName: clientName,
+          senderRole: 'client'
+        });
+      } else {
+        await addSubscriptionMessage(threadId, directMessageInput.trim(), {
+          senderName: clientName,
+          senderRole: 'client'
+        });
+      }
+      setDirectMessageInput('');
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 font-sans">
       {/* INPUT MASQUÉ POUR L'UPLOAD DE PHOTO DE PROFIL */}
@@ -390,6 +439,7 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
             { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
             { id: 'profile', label: 'Mon Profil & Adresse', icon: UserIcon },
             { id: 'kits', label: 'Paiements & Kits', icon: CreditCard, count: clientKits.length },
+            { id: 'messages', label: 'Messagerie Live', icon: MessageSquare, count: totalClientMessagesCount },
             { id: 'tontines', label: 'Mes Tontines', icon: PiggyBank, count: clientTontines.length },
             { id: 'deliveries', label: 'Livraisons', icon: Truck, count: clientDeliveries.length },
             { id: 'notifications', label: 'Notifications', icon: Bell, count: clientNotifications.filter(n => !n.read).length }
@@ -975,6 +1025,172 @@ export const ClientPortalView: React.FC<{ overrideClient?: Client }> = ({ overri
                 </div>
               );
             })
+          )}
+        </motion.div>
+      )}
+
+      {/* ONGLET MESSAGERIE LIVE & SUPPORT EN TEMPS RÉEL */}
+      {activeTab === 'messages' && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="space-y-6"
+        >
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span> Sync Temps Réel
+                </span>
+              </div>
+              <h2 className="text-lg font-bold font-display text-slate-900 dark:text-white mt-1">
+                Centre de Messagerie & Support Direct
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Échangez en direct avec la Direction et vos conseillers Penta GAD. Messages synchronisés instantanément avec la base de données.
+              </p>
+            </div>
+          </div>
+
+          {clientMessagingThreads.length === 0 ? (
+            <div className="p-12 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 text-center space-y-4">
+              <MessageSquare className="w-12 h-12 text-slate-300 mx-auto" />
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">Aucune discussion ouverte</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto mt-1">
+                  Vous n'avez pas encore de dossier actif ni de demande de souscription. Dès que vous souscrivez à un kit, un canal de discussion direct sera automatiquement disponible ici.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRegistrationModal(true)}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs transition-all inline-flex items-center gap-2 shadow-md cursor-pointer"
+              >
+                <ShoppingBag className="w-4 h-4" />
+                <span>Souscrire à un Kit Alimentaire</span>
+              </button>
+            </div>
+          ) : (
+            (() => {
+              const activeThread = clientMessagingThreads.find(t => t.id === selectedThreadId) || clientMessagingThreads[0];
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/60 dark:border-slate-800 shadow-sm p-4 sm:p-6 overflow-hidden">
+                  {/* Liste des canaux de discussion sur la gauche */}
+                  <div className="space-y-3 lg:border-r border-slate-100 dark:border-slate-800 lg:pr-6">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2">
+                      Vos Canaux de Discussion ({clientMessagingThreads.length})
+                    </h3>
+                    <div className="space-y-2 max-h-[450px] overflow-y-auto no-scrollbar">
+                      {clientMessagingThreads.map(thread => {
+                        const isSelected = activeThread.id === thread.id;
+                        const lastMsg = thread.conversations[thread.conversations.length - 1];
+                        return (
+                          <div
+                            key={thread.id}
+                            onClick={() => setSelectedThreadId(thread.id)}
+                            className={`p-3.5 rounded-2xl cursor-pointer transition-all border ${
+                              isSelected
+                                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-500/40 shadow-sm'
+                                : 'bg-slate-50/50 dark:bg-slate-950/50 border-slate-100 dark:border-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                {thread.title}
+                              </span>
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400">
+                                {thread.conversations.length} msg
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mb-1.5">{thread.subTitle}</p>
+                            {lastMsg ? (
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400 line-clamp-1 italic bg-white/60 dark:bg-slate-900/60 p-1.5 rounded-lg border border-slate-100 dark:border-slate-800">
+                                <strong className="not-italic text-slate-800 dark:text-slate-200">{lastMsg.senderName}: </strong>
+                                {lastMsg.text}
+                              </p>
+                            ) : (
+                              <p className="text-[10px] text-slate-400 italic">Aucun message pour l'instant.</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Fenêtre de tchat en temps réel à droite */}
+                  <div className="lg:col-span-2 flex flex-col justify-between h-[480px] bg-slate-50/60 dark:bg-slate-950/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-800">
+                    {/* En-tête de la discussion active */}
+                    <div className="pb-3 border-b border-slate-200/60 dark:border-slate-800 flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                          <MessageSquare className="w-4 h-4 text-emerald-600" />
+                          <span>{activeThread.title}</span>
+                        </h4>
+                        <p className="text-xs text-slate-500">{activeThread.subTitle}</p>
+                      </div>
+                      <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-600 rounded-full text-[10px] font-bold">
+                        En direct
+                      </span>
+                    </div>
+
+                    {/* Zone de messages avec défilement */}
+                    <div className="flex-1 my-3 overflow-y-auto space-y-3 pr-1">
+                      {activeThread.conversations.length === 0 ? (
+                        <div className="text-center py-12 text-slate-400 space-y-2">
+                          <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
+                          <p className="text-xs italic">Posez votre question ou laissez un message concernant votre livraison.</p>
+                          <p className="text-[10px] text-slate-400">Les conseillers de Penta GAD vous répondront en temps réel.</p>
+                        </div>
+                      ) : (
+                        activeThread.conversations.map((msg: any) => {
+                          const isClientMsg = msg.senderRole === 'client' || msg.senderRole === 'prospect';
+                          return (
+                            <div
+                              key={msg.id || Math.random().toString()}
+                              className={`flex flex-col ${isClientMsg ? 'items-end' : 'items-start'}`}
+                            >
+                              <div
+                                className={`max-w-[85%] sm:max-w-[75%] p-3 rounded-2xl text-xs space-y-1 ${
+                                  isClientMsg
+                                    ? 'bg-emerald-600 text-white rounded-br-none shadow-sm'
+                                    : 'bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200/80 dark:border-slate-800 rounded-bl-none shadow-sm'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-3 text-[10px] opacity-80 pb-0.5 border-b border-white/10 dark:border-slate-800">
+                                  <span className="font-bold">{msg.senderName} ({msg.senderRole})</span>
+                                  <span>{msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                                </div>
+                                <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Zone d'envoi de message */}
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Écrivez votre message à l'équipe Penta GAD..."
+                        value={directMessageInput}
+                        onChange={(e) => setDirectMessageInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSendDirectMessage(activeThread.id, activeThread.type);
+                        }}
+                        className="flex-1 px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                      />
+                      <button
+                        onClick={() => handleSendDirectMessage(activeThread.id, activeThread.type)}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shadow-sm shrink-0"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Envoyer</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()
           )}
         </motion.div>
       )}

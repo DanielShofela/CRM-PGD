@@ -285,13 +285,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Charger les données en temps réel dès qu'un utilisateur est connecté ou que la base est mise à jour
+  // Charger les données en temps réel dès que l'application démarre et maintenir la synchro permanente
   useEffect(() => {
-    if (!currentUser) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     const unsubscribers: (() => void)[] = [];
 
@@ -485,7 +480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [currentUser]);
+  }, []);
 
   // Écouteurs inconditionnels pour les visiteurs publics (catalogue produits et kits)
   useEffect(() => {
