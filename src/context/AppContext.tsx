@@ -88,6 +88,8 @@ interface AppContextType {
   addClient: (client: Omit<Client, 'id' | 'createdAt'>, author?: { id: string, name: string, phone: string }) => Promise<void>;
   updateClient: (id: string, updates: Partial<Client>, author?: { id: string, name: string, phone: string }) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
+  togglePortalAccount: (clientId: string, enabled: boolean, initialRawPass?: string) => Promise<void>;
+  updatePortalPassword: (clientId: string, newRawPass: string) => Promise<void>;
 
   addTontineGroup: (group: Omit<TontineGroup, 'id' | 'createdAt'>) => Promise<void>;
   updateTontineGroup: (id: string, updates: Partial<TontineGroup>) => Promise<void>;
@@ -636,6 +638,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await refreshData();
   };
 
+  const togglePortalAccount = async (clientId: string, enabled: boolean, initialRawPass?: string) => {
+    const auth = currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined;
+    await ClientRepository.togglePortalAccount(clientId, enabled, initialRawPass, auth);
+    await refreshData();
+  };
+
+  const updatePortalPassword = async (clientId: string, newRawPass: string) => {
+    const auth = currentUser ? { id: currentUser.id, name: currentUser.displayName, phone: currentUser.phone } : undefined;
+    await ClientRepository.updatePortalPassword(clientId, newRawPass, auth);
+    await refreshData();
+  };
+
   // TONTINES ACTIONS
   const addTontineGroup = async (group: Omit<TontineGroup, 'id' | 'createdAt'>) => {
     await TontineRepository.createGroup(group, getAuthor());
@@ -915,6 +929,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addClient,
         updateClient,
         deleteClient,
+        togglePortalAccount,
+        updatePortalPassword,
         addTontineGroup,
         updateTontineGroup,
         deleteTontineGroup,

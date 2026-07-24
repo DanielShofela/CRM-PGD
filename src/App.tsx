@@ -15,6 +15,7 @@ import { KitsView } from './modules/KitsView';
 import { DeliveriesView } from './modules/DeliveriesView';
 import { UsersView } from './modules/UsersView';
 import { SettingsView } from './modules/SettingsView';
+import { ClientPortalView } from './modules/ClientPortalView';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, ArrowRight, ShieldAlert, Settings } from 'lucide-react';
 
@@ -42,6 +43,10 @@ const AppContent: React.FC = () => {
 
   // Router Switchboard
   const renderActiveModule = () => {
+    if (currentUser?.role === 'client') {
+      return <ClientPortalView />;
+    }
+
     switch (activeModuleId) {
       case 'dashboard':
         return <DashboardView />;
@@ -57,6 +62,8 @@ const AppContent: React.FC = () => {
         return <UsersView />;
       case 'settings':
         return <SettingsView />;
+      case 'portal':
+        return <ClientPortalView />;
       default:
         // Pour les modules futurs enregistrés dynamiquement dans le registre (ex: Comptabilité, Stocks, SAV)
         const customModule = modules.find(m => m.id === activeModuleId);

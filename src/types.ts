@@ -11,6 +11,7 @@ export interface User {
   role: string; // 'super_admin' | 'admin' | 'agent' | 'livreur' | 'client' | custom
   status: 'active' | 'inactive';
   createdAt: string;
+  clientId?: string; // ID du client si l'utilisateur est un compte du portail client
 }
 
 export interface Attachment {
@@ -36,6 +37,10 @@ export interface Client {
   createdAt: string;
   customFields?: Record<string, any>; // Permet l'extensibilité du profil client
   attachments?: Attachment[];
+  portalAccountEnabled?: boolean; // Compte portail: Désactivé (false/undefined) / Activé (true)
+  portalPasswordHash?: string; // Mot de passe sécurisé pour l'accès au portail
+  portalPassword?: string; // Mot de passe lisible pour l'administrateur
+  lastLoginAt?: string;
 }
 
 export interface TontineMember {
@@ -187,6 +192,7 @@ export interface ConversationMessage {
 
 export interface Subscription {
   id: string;
+  clientId?: string;
   customerName: string;
   phone: string;
   address: string;

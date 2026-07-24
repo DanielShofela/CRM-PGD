@@ -27,9 +27,17 @@ import {
   Share2,
   Link as LinkIcon,
   UploadCloud,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  KeyRound,
+  Eye,
+  EyeOff,
+  UserCheck,
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { Client, Attachment } from '../types';
+import { ClientPortalView } from './ClientPortalView';
 
 // Image Compression Helper
 function compressImage(file: File, maxWidth = 300, maxHeight = 300, quality = 0.7): Promise<string> {
@@ -89,6 +97,8 @@ export const ClientsView: React.FC = () => {
     addClient,
     updateClient,
     deleteClient,
+    togglePortalAccount,
+    updatePortalPassword,
     payments,
     kits,
     tontines,
@@ -98,6 +108,12 @@ export const ClientsView: React.FC = () => {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [filterCommune, setFilterCommune] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+
+  // Gestion du Portail Client (Activation, Mot de passe & Aperçu)
+  const [isPortalModalOpen, setIsPortalModalOpen] = useState(false);
+  const [portalPasswordInput, setPortalPasswordInput] = useState('');
+  const [showPortalPass, setShowPortalPass] = useState(false);
+  const [isPortalPreviewOpen, setIsPortalPreviewOpen] = useState(false);
 
   // Formulaire d'édition / création
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -593,6 +609,82 @@ export const ClientsView: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* ACCÈS PORTAIL CLIENT DE CE PROFIL */}
+              <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                    <div>
+                      <h4 className="font-bold text-slate-900 dark:text-white text-xs">Accès Portail Client</h4>
+                      <p className="text-[10px] text-slate-500">
+                        {selectedClient.portalAccountEnabled
+                          ? "Le compte portail est actif. Le client se connecte avec son numéro et mot de passe."
+                          : "Compte désactivé par défaut. Activez-le pour permettre l'accès au portail client."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                    selectedClient.portalAccountEnabled
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-400'
+                      : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
+                  }`}>
+                    {selectedClient.portalAccountEnabled ? '🟢 Activé' : '🔴 Désactivé'}
+                  </span>
+                </div>
+
+                {selectedClient.portalAccountEnabled ? (
+                  <div className="p-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 rounded-2xl flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-slate-500 font-semibold">Identifiant : <strong className="text-slate-800 dark:text-slate-200">{selectedClient.phone}</strong></p>
+                      <p className="text-[10px] text-slate-500 font-semibold">Mot de passe initial : <strong className="font-mono text-emerald-700 dark:text-emerald-400">{selectedClient.portalPassword || "••••••••"}</strong></p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsPortalPreviewOpen(true)}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <UserCheck className="w-3.5 h-3.5" /> Aperçu Portail Client
+                      </button>
+                      <button
+                        onClick={() => {
+                          setPortalPasswordInput(selectedClient.portalPassword || '');
+                          setIsPortalModalOpen(true);
+                        }}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" /> Modifier Pass
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm("Voulez-vous désactiver l'accès au portail client pour ce client ?")) {
+                            await togglePortalAccount(selectedClient.id, false);
+                            showToast("Compte portail désactivé avec succès.", "info");
+                          }
+                        }}
+                        className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-[11px] font-medium transition-all cursor-pointer"
+                      >
+                        Désactiver
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 rounded-2xl text-xs">
+                    <span className="text-slate-500">Identifiant prévu : <strong>{selectedClient.phone}</strong></span>
+                    <button
+                      onClick={() => {
+                        setPortalPasswordInput('penta' + Math.floor(1000 + Math.random() * 9000));
+                        setIsPortalModalOpen(true);
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[11px] font-bold shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" /> Activer le Portail Client
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Historique Financier, Tontine & Kits */}
@@ -1035,6 +1127,135 @@ export const ClientsView: React.FC = () => {
                 </button>
               </div>
             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL ACTIVATION / MOT DE PASSE PORTAIL CLIENT */}
+      <AnimatePresence>
+        {isPortalModalOpen && selectedClient && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200/60 dark:border-slate-800 space-y-6"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400 rounded-xl">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <h3 className="text-base font-bold font-display text-slate-900 dark:text-white">
+                    {selectedClient.portalAccountEnabled ? "Modifier mot de passe portail" : "Activer le Portail Client"}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setIsPortalModalOpen(false)}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4 text-xs">
+                <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800 space-y-1">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase">Client concerné</p>
+                  <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">{selectedClient.firstName} {selectedClient.lastName}</p>
+                  <p className="text-slate-500 text-xs">Identifiant de connexion : <strong className="text-emerald-600">{selectedClient.phone}</strong></p>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
+                    Définir le mot de passe de connexion
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPortalPass ? "text" : "password"}
+                      value={portalPasswordInput}
+                      onChange={(e) => setPortalPasswordInput(e.target.value)}
+                      placeholder="Saisissez un mot de passe (min. 4 car.)"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPortalPass(!showPortalPass)}
+                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showPortalPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">Le client pourra modifier ce mot de passe lui-même après sa première connexion.</p>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsPortalModalOpen(false)}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!portalPasswordInput || portalPasswordInput.length < 4) {
+                        showToast("Le mot de passe doit comporter au moins 4 caractères.", "error");
+                        return;
+                      }
+                      try {
+                        if (!selectedClient.portalAccountEnabled) {
+                          await togglePortalAccount(selectedClient.id, true, portalPasswordInput);
+                          showToast("Portail client activé avec succès !", "success");
+                        } else {
+                          await updatePortalPassword(selectedClient.id, portalPasswordInput);
+                          showToast("Mot de passe mis à jour avec succès !", "success");
+                        }
+                        setIsPortalModalOpen(false);
+                      } catch (err: any) {
+                        showToast(err.message || "Erreur lors de l'activation", "error");
+                      }
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Enregistrer & Activer
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL APERÇU DU PORTAIL CLIENT POUR L'ADMINISTRATEUR */}
+      <AnimatePresence>
+        {isPortalPreviewOpen && selectedClient && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col p-2 sm:p-6 overflow-y-auto">
+            <div className="max-w-7xl w-full mx-auto space-y-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between text-white shadow-xl">
+                <div className="flex items-center gap-3">
+                  <span className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                    <UserCheck className="w-5 h-5" />
+                  </span>
+                  <div>
+                    <h3 className="font-bold text-sm">Aperçu du Portail Client (Mode Administrateur)</h3>
+                    <p className="text-xs text-slate-400">
+                      Vision exacte de l'espace personnel de <strong>{selectedClient.firstName} {selectedClient.lastName}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsPortalPreviewOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <X className="w-4 h-4" /> Fermer l'Aperçu
+                </button>
+              </div>
+
+              {/* Rendu dynamique du composant Portail Client avec overrideClient */}
+              <ClientPortalView overrideClient={selectedClient} />
+            </div>
           </div>
         )}
       </AnimatePresence>

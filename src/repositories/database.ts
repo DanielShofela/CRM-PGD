@@ -188,13 +188,45 @@ export const UserRepository = {
     }
 
     const user = await this.getByPhone(phone);
-    if (!user) return null;
-    if (user.status !== 'active') return null;
-    const inputHash = await hashPassword(rawPassword);
-    if (user.passwordHash === inputHash) {
-      await ActivityRepository.log(user.id, user.phone, user.displayName, 'login', 'Connexion réussie à l\'application');
-      return user;
+    if (user) {
+      if (user.status !== 'active') return null;
+      const inputHash = await hashPassword(rawPassword);
+      if (user.passwordHash === inputHash) {
+        if (user.role === 'client' && user.clientId) {
+          const client = await ClientRepository.getById(user.clientId);
+          if (!client || !client.portalAccountEnabled) {
+            throw new Error("Le compte portail de ce client est désactivé. Veuillez contacter un administrateur.");
+          }
+        }
+        await ActivityRepository.log(user.id, user.phone, user.displayName, 'login', 'Connexion réussie à l\'application');
+        return user;
+      }
+      return null;
     }
+
+    // Vérification directe dans CLIENTS_COL si le client n'est pas encore dans USERS_COL
+    const client = await ClientRepository.getByPhone(phone);
+    if (client) {
+      if (!client.portalAccountEnabled) {
+        throw new Error("Le compte portail pour ce numéro est désactivé. Veuillez contacter un administrateur.");
+      }
+      const inputHash = await hashPassword(rawPassword);
+      if (client.portalPasswordHash === inputHash) {
+        const clientUser: User = {
+          id: 'user_client_' + client.id,
+          displayName: `${client.firstName} ${client.lastName}`,
+          phone: client.phone,
+          passwordHash: client.portalPasswordHash || '',
+          role: 'client',
+          clientId: client.id,
+          status: 'active',
+          createdAt: client.createdAt || new Date().toISOString()
+        };
+        await ActivityRepository.log(clientUser.id, clientUser.phone, clientUser.displayName, 'login', 'Connexion au Portail Client réussie');
+        return clientUser;
+      }
+    }
+
     return null;
   }
 };
@@ -255,7 +287,8 @@ export const ClientRepository = {
       id,
       createdAt: new Date().toISOString(),
       customFields: client.customFields || {},
-      attachments: client.attachments || []
+      attachments: client.attachments || [],
+      portalAccountEnabled: client.portalAccountEnabled || false
     };
     await setDoc(doc(db, CLIENTS_COL, id), newClient);
     const authorId = author ? author.id : 'public_self_register';
@@ -276,8 +309,97 @@ export const ClientRepository = {
     await ActivityRepository.log(authorId, authorPhone, authorName, 'update', `Modification du client ID: ${id}`);
   },
 
+  async togglePortalAccount(clientId: string, enabled: boolean, rawPassword?: string, adminUser?: { id: string, name: string, phone: string }): Promise<void> {
+    const docRef = doc(db, CLIENTS_COL, clientId);
+    const client = await this.getById(clientId);
+    if (!client) throw new Error("Client non trouvé");
+
+    if (enabled) {
+      if (!rawPassword || rawPassword.trim().length < 4) {
+        throw new Error("Le mot de passe initial doit contenir au moins 4 caractères.");
+      }
+      const portalPasswordHash = await hashPassword(rawPassword);
+      await updateDoc(docRef, {
+        portalAccountEnabled: true,
+        portalPasswordHash,
+        portalPassword: rawPassword
+      });
+
+      const userId = 'user_client_' + clientId;
+      const userRef = doc(db, USERS_COL, userId);
+      const userSnap = await getDoc(userRef);
+      const userPayload: User = {
+        id: userId,
+        displayName: `${client.firstName} ${client.lastName}`,
+        phone: client.phone,
+        passwordHash: portalPasswordHash,
+        role: 'client',
+        clientId: client.id,
+        status: 'active',
+        createdAt: new Date().toISOString()
+      };
+      if (userSnap.exists()) {
+        await updateDoc(userRef, {
+          displayName: userPayload.displayName,
+          phone: userPayload.phone,
+          passwordHash: portalPasswordHash,
+          status: 'active',
+          role: 'client'
+        });
+      } else {
+        await setDoc(userRef, userPayload);
+      }
+
+      if (adminUser) {
+        await ActivityRepository.log(adminUser.id, adminUser.phone, adminUser.name, 'update', `Activation du compte portail pour le client ${client.firstName} ${client.lastName}`);
+      }
+    } else {
+      await updateDoc(docRef, {
+        portalAccountEnabled: false
+      });
+
+      const userId = 'user_client_' + clientId;
+      const userRef = doc(db, USERS_COL, userId);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        await updateDoc(userRef, { status: 'inactive' });
+      }
+
+      if (adminUser) {
+        await ActivityRepository.log(adminUser.id, adminUser.phone, adminUser.name, 'update', `Désactivation du compte portail pour le client ${client.firstName} ${client.lastName}`);
+      }
+    }
+  },
+
+  async updatePortalPassword(clientId: string, newRawPassword: string, author?: { id: string, name: string, phone: string }): Promise<void> {
+    if (!newRawPassword || newRawPassword.trim().length < 4) {
+      throw new Error("Le mot de passe doit contenir au moins 4 caractères.");
+    }
+    const docRef = doc(db, CLIENTS_COL, clientId);
+    const client = await this.getById(clientId);
+    if (!client) throw new Error("Client non trouvé");
+
+    const portalPasswordHash = await hashPassword(newRawPassword);
+    await updateDoc(docRef, {
+      portalPasswordHash,
+      portalPassword: newRawPassword
+    });
+
+    const userId = 'user_client_' + clientId;
+    const userRef = doc(db, USERS_COL, userId);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      await updateDoc(userRef, { passwordHash: portalPasswordHash });
+    }
+
+    const logAuthor = author || { id: client.id, phone: client.phone, name: `${client.firstName} ${client.lastName}` };
+    await ActivityRepository.log(logAuthor.id, logAuthor.phone, logAuthor.name, 'update', `Modification du mot de passe du compte portail client ID: ${clientId}`);
+  },
+
   async delete(id: string, author: { id: string, name: string, phone: string }): Promise<void> {
     await deleteDoc(doc(db, CLIENTS_COL, id));
+    const userId = 'user_client_' + id;
+    await deleteDoc(doc(db, USERS_COL, userId));
     await ActivityRepository.log(author.id, author.phone, author.name, 'delete', `Suppression du client ID: ${id}`);
   }
 };
@@ -736,6 +858,7 @@ export async function seedPlatformData(): Promise<void> {
     { id: 'tontine', name: 'Tontine', icon: 'PiggyBank', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Gestion des groupes de tontine, participants, tirages et cotisations.' },
     { id: 'kits', name: 'Kits alimentaires', icon: 'ShoppingBag', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent'], description: 'Inscriptions aux abonnements de kits alimentaires, suivi des soldes et livraisons.' },
     { id: 'deliveries', name: 'Livraisons', icon: 'Truck', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur'], description: 'Suivi et attribution des livraisons de kits alimentaires aux livreurs.' },
+    { id: 'portal', name: 'Portail Client', icon: 'UserCheck', enabled: true, rolesAllowed: ['super_admin', 'admin', 'client'], description: 'Espace client sécurisé en consultation seule pour l\'historique, les cotisations et livraisons.' },
     { id: 'users', name: 'Utilisateurs', icon: 'ShieldAlert', enabled: true, rolesAllowed: ['super_admin', 'admin'], description: 'Gestion des accès d\'équipe, des agents, des livreurs et des rôles.' },
     { id: 'settings', name: 'Paramètres', icon: 'Settings', enabled: true, rolesAllowed: ['super_admin', 'admin', 'agent', 'livreur', 'client'], description: 'Configuration du profil, gestion des rôles dynamiques et du registre de modules.' }
   ];

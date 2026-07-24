@@ -408,8 +408,17 @@ const KitImageCarousel: React.FC<KitImageCarouselProps> = ({ kit, products }) =>
 };
 
 export const ClientRegistrationView: React.FC = () => {
-  const { platformSettings, kitDefinitions, addSubscription, addClient, products, categories } = useApp();
+  const { currentUser, clients, platformSettings, kitDefinitions, addSubscription, addKitPlan, addClient, products, categories } = useApp();
   
+  // Détecter si le client est actuellement connecté
+  const connectedClient = React.useMemo(() => {
+    if (!currentUser) return null;
+    if (currentUser.role === 'client' && currentUser.clientId) {
+      return clients.find(c => c.id === currentUser.clientId) || null;
+    }
+    return clients.find(c => c.phone === currentUser.phone) || null;
+  }, [currentUser, clients]);
+
   // Choose between public kitDefinitions from firestore or static defaults
   const kitsToDisplay = kitDefinitions.length > 0 ? kitDefinitions : DEFAULT_KITS;
 
@@ -477,6 +486,19 @@ export const ClientRegistrationView: React.FC = () => {
   const [observations, setObservations] = useState('');
   const [autoRegisterInCRM, setAutoRegisterInCRM] = useState(true);
 
+  // Pre-fill fields automatically if connectedClient is present
+  useEffect(() => {
+    if (connectedClient) {
+      setPhone(connectedClient.phone || '');
+      setFirstName(connectedClient.firstName || '');
+      setLastName(connectedClient.lastName || '');
+      setCommune(connectedClient.commune || 'Cocody');
+      setQuartier(connectedClient.quartier || '');
+      setAddress(connectedClient.address || '');
+      if (connectedClient.photoUrl) setPhotoDataUrl(connectedClient.photoUrl);
+    }
+  }, [connectedClient]);
+
   // Photo & attachments
   const [photoDataUrl, setPhotoDataUrl] = useState<string>('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -540,7 +562,8 @@ export const ClientRegistrationView: React.FC = () => {
     e.preventDefault();
     setError(null);
 
-    if (!phone.trim()) {
+    const finalPhone = (phone || connectedClient?.phone || '').trim();
+    if (!finalPhone) {
       setError("Le numéro de téléphone est obligatoire.");
       return;
     }
@@ -548,22 +571,45 @@ export const ClientRegistrationView: React.FC = () => {
     setLoading(true);
 
     try {
-      const customerName = `${firstName.trim()} ${lastName.trim()}`.trim() || 'Client public';
-      
-      // 1. Save Lead in subscriptions collection
+      const customerName = connectedClient
+        ? `${connectedClient.firstName} ${connectedClient.lastName}`
+        : `${firstName.trim()} ${lastName.trim()}`.trim() || 'Client public';
+
+      const fullAddress = `${commune}, ${quartier ? quartier + ', ' : ''}${address.trim()}`;
+
+      // 1. Enregistrer le lead dans la collection subscriptions
       await addSubscription({
+        clientId: connectedClient?.id,
         customerName,
-        phone: phone.trim(),
-        address: `${commune}, ${quartier ? quartier + ', ' : ''}${address.trim()}`,
+        phone: finalPhone,
+        address: fullAddress,
         kitId: activeKit?.id || 'general',
         kitName: activeKit?.name || 'Inscription Générale',
         status: 'En attente'
       });
 
-      // 2. Seamlessly register client in CRM if selected
-      if (autoRegisterInCRM) {
+      // 2. Si le client est connecté, lui ouvrir directement le KitPlan pour que son espace client se mette à jour instantanément !
+      if (connectedClient && activeKit) {
+        const parsedPrice = parseInt((activeKit.totalValue || '25000').replace(/[^0-9]/g, ''), 10) || 25000;
+        const endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + 12);
+        const nextDelivery = new Date();
+        nextDelivery.setDate(nextDelivery.getDate() + 10);
+
+        await addKitPlan({
+          clientId: connectedClient.id,
+          kitType: activeKit.name,
+          status: 'active',
+          price: parsedPrice,
+          balance: 0,
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: endDate.toISOString().split('T')[0],
+          nextDeliveryDate: nextDelivery.toISOString().split('T')[0]
+        });
+      } else if (autoRegisterInCRM && !connectedClient) {
+        // Enregistrer le prospect dans le CRM s'il n'existe pas encore
         const payload: Omit<Client, 'id' | 'createdAt'> = {
-          phone: phone.trim(),
+          phone: finalPhone,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           commune,
@@ -574,7 +620,7 @@ export const ClientRegistrationView: React.FC = () => {
           observations: observations.trim() || `Souscription demandée pour le pack: ${activeKit?.name || 'Général'}`,
           customFields: { 
             packInteret: activeKit?.name || 'Aucun pack spécifique',
-            canal: 'Showcase Public Vitrine' 
+            canal: 'Espace d\'inscription des Kits' 
           },
           attachments: attachments
         };
@@ -701,17 +747,55 @@ export const ClientRegistrationView: React.FC = () => {
             </span>
           </div>
 
-          <button 
-            onClick={handleOpenGeneralRegistration}
-            className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-          >
-            S'enregistrer
-          </button>
+          {!connectedClient && !currentUser ? (
+            <button 
+              onClick={handleOpenGeneralRegistration}
+              className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+            >
+              S'enregistrer
+            </button>
+          ) : (
+            <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-extrabold text-xs rounded-xl flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Compte connecté</span>
+            </span>
+          )}
         </div>
       </header>
 
       {/* Main Container */}
       <main className="max-w-6xl mx-auto px-4 mt-8 space-y-12">
+        {/* BANNIÈRE COMPTE CLIENT CONNECTÉ */}
+        {connectedClient && (
+          <div className="bg-emerald-500/10 dark:bg-emerald-950/50 border border-emerald-500/30 dark:border-emerald-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl overflow-hidden border border-emerald-400 dark:border-emerald-700 bg-white shrink-0 shadow-sm">
+                <img
+                  src={connectedClient.photoUrl || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"}
+                  alt="Connected Client"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    Compte Connecté : {connectedClient.firstName} {connectedClient.lastName}
+                  </span>
+                  <span className="px-2.5 py-0.5 bg-emerald-600 text-white text-[10px] font-black rounded-full">
+                    Client #{connectedClient.id}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                  Vos informations (Téléphone : <strong className="text-emerald-600">{connectedClient.phone}</strong>) sont automatiquement pré-remplies et directement liées à votre profil.
+                </p>
+              </div>
+            </div>
+            <div className="px-3 py-1.5 bg-emerald-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shrink-0">
+              <CheckCircle className="w-4 h-4" /> Compte Vérifié
+            </div>
+          </div>
+        )}
         {/* Showcase Banner */}
         <div className="text-center space-y-4 max-w-2xl mx-auto">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] uppercase tracking-wider animate-pulse">
@@ -1027,6 +1111,13 @@ export const ClientRegistrationView: React.FC = () => {
 
             {/* Form body */}
             <form onSubmit={handleSubscribe} className="p-6 space-y-5 text-xs overflow-y-auto max-h-[70vh]">
+              {connectedClient && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Vous êtes connecté(e) en tant que <strong>{connectedClient.firstName} {connectedClient.lastName}</strong> ({connectedClient.phone}). Vos informations sont associées automatiquement.</span>
+                </div>
+              )}
+
               {error && (
                 <div ref={errorRef} className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-xl text-rose-600 dark:text-rose-400 font-semibold">
                   {error}
@@ -1035,16 +1126,24 @@ export const ClientRegistrationView: React.FC = () => {
 
               {/* Téléphone (Obligatoire) */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
-                  <Phone className="w-3.5 h-3.5" /> Numéro de téléphone <span className="text-rose-500">* obligatoire</span>
+                <label className="block text-[10px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Phone className="w-3.5 h-3.5" /> Numéro de téléphone <span className="text-rose-500">* obligatoire</span>
+                  </span>
+                  {connectedClient && <span className="text-[9px] text-emerald-600 font-bold uppercase">Identifiant Fixe</span>}
                 </label>
                 <input
                   type="tel"
                   required
                   value={phone}
+                  readOnly={!!connectedClient}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="Ex: 0749123456"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 focus:border-emerald-500 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 dark:text-white font-medium"
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white font-medium focus:outline-none ${
+                    connectedClient 
+                      ? 'bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-not-allowed text-slate-500' 
+                      : 'bg-slate-50 dark:bg-slate-950 border border-emerald-500/30 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                  }`}
                 />
               </div>
 
@@ -1055,9 +1154,14 @@ export const ClientRegistrationView: React.FC = () => {
                   <input
                     type="text"
                     value={firstName}
+                    readOnly={!!connectedClient}
                     onChange={(e) => setFirstName(e.target.value)}
                     placeholder="Ex: Jean-Marc"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white font-medium focus:outline-none ${
+                      connectedClient 
+                        ? 'bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-not-allowed text-slate-500' 
+                        : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800'
+                    }`}
                   />
                 </div>
                 <div>
@@ -1065,9 +1169,14 @@ export const ClientRegistrationView: React.FC = () => {
                   <input
                     type="text"
                     value={lastName}
+                    readOnly={!!connectedClient}
                     onChange={(e) => setLastName(e.target.value)}
                     placeholder="Ex: Kouassi"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none text-slate-900 dark:text-white"
+                    className={`w-full px-3.5 py-2.5 rounded-xl text-slate-900 dark:text-white font-medium focus:outline-none ${
+                      connectedClient 
+                        ? 'bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-not-allowed text-slate-500' 
+                        : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800'
+                    }`}
                   />
                 </div>
               </div>
